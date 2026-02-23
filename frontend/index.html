@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PulseCheck — Twitter Sentiment</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --ink:     #1a1410;
+      --ink2:    #3d3530;
+      --ink3:    #7a6e68;
+      --paper:   #f5f0e8;
+      --paper2:  #ede8de;
+      --paper3:  #e4ddd0;
+      --rule:    #d4cdc0;
+      --pos:     #1a6b3c;
+      --pos-bg:  #e8f5ee;
+      --neg:     #8b1a1a;
+      --neg-bg:  #faeaea;
+      --neu:     #5c4a00;
+      --neu-bg:  #fdf6e0;
+      --accent:  #c0392b;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 300;
+      min-height: 100vh;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 0;
+    }
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: repeating-linear-gradient(transparent, transparent 27px, var(--rule) 27px, var(--rule) 28px);
+      opacity: 0.25;
+      pointer-events: none; z-index: 0;
+    }
+    * { position: relative; z-index: 1; }
+
+    /* ── MASTHEAD ── */
+    .masthead {
+      border-bottom: 3px double var(--ink);
+      padding: 0 48px;
+    }
+    .masthead-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 0 12px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .edition { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 2px; color: var(--ink3); text-transform: uppercase; }
+    .masthead-title { font-family: 'Playfair Display', serif; font-size: clamp(40px, 5.5vw, 68px); font-weight: 900; letter-spacing: -2px; line-height: 1; text-align: center; }
+    .masthead-title em { color: var(--accent); font-style: italic; }
+    .masthead-sub { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 2px; color: var(--ink3); text-transform: uppercase; text-align: right; }
+    .masthead-tagline {
+      text-align: center; padding: 10px 0; font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: var(--ink3);
+      display: flex; align-items: center; justify-content: center; gap: 16px;
+    }
+    .masthead-tagline::before, .masthead-tagline::after { content: '✦'; color: var(--accent); font-size: 8px; }
+
+    /* ── LAYOUT ── */
+    .page-body {
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      gap: 0;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 48px;
+      align-items: start;
+    }
+    .main-col { padding-right: 40px; border-right: 1px solid var(--rule); }
+    .side-col { padding-left: 28px; }
+
+    /* ── SEARCH ── */
+    .search-wrap { padding-top: 40px; margin-bottom: 32px; }
+    .search-kicker {
+      font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+    }
+    .search-kicker::after { content: ''; flex: 1; height: 1px; background: var(--rule); }
+    .search-headline { font-family: 'Playfair Display', serif; font-size: clamp(24px, 3.5vw, 36px); font-weight: 700; line-height: 1.1; margin-bottom: 20px; }
+    .search-headline em { font-style: italic; color: var(--ink3); }
+    .search-form {
+      display: flex; border: 2px solid var(--ink); background: white;
+      border-radius: 2px; overflow: hidden; box-shadow: 4px 4px 0 var(--ink);
+      transition: box-shadow 0.15s;
+    }
+    .search-form:focus-within { box-shadow: 5px 5px 0 var(--accent); }
+    .search-at {
+      padding: 0 14px; font-family: 'Playfair Display', serif; font-size: 20px;
+      font-style: italic; color: var(--ink3); background: var(--paper2);
+      border-right: 2px solid var(--rule); display: flex; align-items: center;
+    }
+    #keyword {
+      flex: 1; padding: 15px 18px; font-family: 'DM Sans', sans-serif;
+      font-size: 16px; color: var(--ink); background: transparent; border: none; outline: none;
+    }
+    #keyword::placeholder { color: var(--ink3); opacity: 0.6; }
+    .count-pick {
+      padding: 0 12px; font-family: 'DM Mono', monospace; font-size: 11px;
+      color: var(--ink2); background: var(--paper2); border: none;
+      border-left: 2px solid var(--rule); cursor: pointer; outline: none;
+    }
+    .analyze-btn {
+      padding: 0 28px; background: var(--ink); color: var(--paper); border: none;
+      font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 2px;
+      text-transform: uppercase; cursor: pointer; transition: background 0.15s; white-space: nowrap;
+    }
+    .analyze-btn:hover { background: var(--accent); }
+    .analyze-btn:disabled { background: var(--rule); color: var(--ink3); cursor: not-allowed; }
+    .search-note { margin-top: 9px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--ink3); }
+    .search-note a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted; }
+
+    /* ── STATUS / ERROR ── */
+    .status-line { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--ink3); min-height: 20px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite; flex-shrink: 0; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
+    .error-inner { background: var(--neg-bg); border: 1px solid var(--neg); border-left: 4px solid var(--neg); padding: 10px 16px; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--neg); margin-bottom: 16px; }
+
+    /* ── SECTION RULE ── */
+    .section-rule { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; margin-top: 8px; }
+    .section-rule-label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--ink3); white-space: nowrap; }
+    .section-rule-line { flex: 1; height: 1px; background: var(--ink); }
+
+    /* ── VERDICT ── */
+    .verdict {
+      border: 2px solid var(--ink); padding: 24px 28px; margin-bottom: 24px;
+      background: white; box-shadow: 4px 4px 0 var(--ink2);
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-template-rows: auto auto;
+      gap: 20px 32px;
+      align-items: start;
+    }
+    .verdict-main { grid-column: 1; grid-row: 1 / 3; }
+    .verdict-eyebrow { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--ink3); margin-bottom: 6px; }
+    .verdict-word { font-family: 'Playfair Display', serif; font-size: clamp(36px, 5vw, 60px); font-weight: 900; line-height: 1; letter-spacing: -1px; }
+    .verdict-word.positive { color: var(--pos); }
+    .verdict-word.negative { color: var(--neg); }
+    .verdict-word.neutral  { color: var(--neu); }
+    .verdict-compound { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--ink3); margin-top: 6px; }
+    .verdict-stats { grid-column: 2; grid-row: 1; display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-end; }
+    .v-stat-num { font-family: 'Playfair Display', serif; font-size: 32px; font-weight: 700; line-height: 1; }
+    .v-stat-num.tot { color: var(--ink); }
+    .v-stat-num.pos { color: var(--pos); }
+    .v-stat-num.neg { color: var(--neg); }
+    .v-stat-num.neu { color: var(--neu); }
+    .v-stat-label { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink3); margin-top: 3px; }
+
+    /* ── DIST BAR ── */
+    .dist-bar-wrap { margin-bottom: 36px; }
+    .dist-bar { height: 8px; display: flex; border-radius: 1px; overflow: hidden; margin-bottom: 12px; border: 1px solid var(--rule); }
+    .db-pos { background: var(--pos); transition: width 1s cubic-bezier(0.4,0,0.2,1); }
+    .db-neg { background: var(--neg); transition: width 1s cubic-bezier(0.4,0,0.2,1) 0.1s; }
+    .db-neu { background: #c9a84c; transition: width 1s cubic-bezier(0.4,0,0.2,1) 0.2s; }
+    .dist-legend { display: flex; gap: 20px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; flex-wrap: wrap; }
+    .dl-item { display: flex; align-items: center; gap: 6px; color: var(--ink3); }
+    .dl-swatch { width: 10px; height: 10px; border-radius: 1px; flex-shrink: 0; }
+
+    /* ── TWEET TABLE ── */
+    .tweet-controls { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+    .tweet-count-label { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 700; font-style: italic; color: var(--ink2); }
+    .filter-group { display: flex; gap: 0; border: 1px solid var(--rule); border-radius: 2px; overflow: hidden; }
+    .filter-btn {
+      padding: 6px 13px; font-family: 'DM Mono', monospace; font-size: 9px;
+      letter-spacing: 1.5px; text-transform: uppercase; background: var(--paper);
+      color: var(--ink3); border: none; border-right: 1px solid var(--rule);
+      cursor: pointer; transition: all 0.12s;
+    }
+    .filter-btn:last-child { border-right: none; }
+    .filter-btn:hover { background: var(--paper2); color: var(--ink); }
+    .filter-btn.active { background: var(--ink); color: var(--paper); }
+
+    .tweet-table { width: 100%; border-collapse: collapse; border: 2px solid var(--ink); font-size: 13px; }
+    .tweet-table thead tr { background: var(--ink); color: var(--paper); }
+    .tweet-table thead th { padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; text-align: left; font-weight: 500; }
+    .tweet-table tbody tr { border-bottom: 1px solid var(--rule); transition: background 0.1s; animation: rowIn 0.25s ease both; }
+    @keyframes rowIn { from { opacity:0; transform: translateX(-4px); } to { opacity:1; transform:none; } }
+    .tweet-table tbody tr:hover { background: var(--paper2); }
+    .tweet-table tbody tr:last-child { border-bottom: none; }
+    .tweet-table td { padding: 12px 14px; vertical-align: top; }
+
+    .tag { display: inline-block; padding: 2px 7px; font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; border-radius: 1px; font-weight: 500; white-space: nowrap; }
+    .tag-positive { background: var(--pos-bg); color: var(--pos); border: 1px solid var(--pos); }
+    .tag-negative { background: var(--neg-bg); color: var(--neg); border: 1px solid var(--neg); }
+    .tag-neutral  { background: var(--neu-bg); color: var(--neu); border: 1px solid #c9a84c; }
+
+    .tweet-text-cell { color: var(--ink2); line-height: 1.6; }
+    .tweet-footer { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+    .tweet-time {
+      font-family: 'DM Mono', monospace; font-size: 10px; color: var(--accent);
+      text-decoration: none; border-bottom: 1px dotted var(--accent);
+      transition: opacity 0.15s; display: inline-flex; align-items: center; gap: 4px;
+    }
+    .tweet-time:hover { opacity: 0.65; }
+    .non-english-badge {
+      font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px;
+      padding: 1px 6px; border-radius: 2px; text-transform: uppercase;
+      background: #f0f0f0; color: var(--ink3); border: 1px solid var(--rule);
+    }
+    .tweet-meta-cell { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--ink3); white-space: nowrap; }
+    .tweet-meta-cell .likes { color: var(--neg); }
+    .score-cell { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; white-space: nowrap; text-align: right; }
+    .score-pos { color: var(--pos); }
+    .score-neg { color: var(--neg); }
+    .score-neu { color: var(--neu); }
+    tr.non-english-row td { opacity: 0.75; }
+
+    /* ── EMPTY STATE ── */
+    .empty-state { padding: 80px 0; text-align: center; }
+    .empty-drop { font-family: 'Playfair Display', serif; font-size: 88px; font-weight: 900; font-style: italic; color: var(--paper3); line-height: 1; margin-bottom: 16px; }
+    .empty-text { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink3); }
+
+    /* ── SIDEBAR ── */
+    .side-col { padding-top: 40px; }
+    .sidebar-section { margin-bottom: 32px; }
+    .sidebar-heading {
+      font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 3px;
+      text-transform: uppercase; color: var(--ink3); padding-bottom: 8px;
+      border-bottom: 2px solid var(--ink); margin-bottom: 12px;
+    }
+    .history-item {
+      padding: 10px 0; border-bottom: 1px solid var(--rule); cursor: pointer;
+      transition: padding-left 0.15s;
+    }
+    .history-item:hover { padding-left: 4px; }
+    .history-item:last-child { border-bottom: none; }
+    .history-keyword { font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 700; color: var(--ink); }
+    .history-verdict { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; margin-top: 3px; }
+    .history-verdict.positive { color: var(--pos); }
+    .history-verdict.negative { color: var(--neg); }
+    .history-verdict.neutral  { color: var(--neu); }
+    .history-meta { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--ink3); margin-top: 3px; }
+    .history-bar { height: 3px; display: flex; border-radius: 1px; overflow: hidden; margin-top: 6px; }
+    .hb-pos { background: var(--pos); }
+    .hb-neg { background: var(--neg); }
+    .hb-neu { background: #c9a84c; }
+    .history-empty { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--ink3); padding: 12px 0; line-height: 1.7; }
+    .pb-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px;
+      text-transform: uppercase; padding: 4px 8px;
+      border: 1px solid var(--rule); border-radius: 2px; color: var(--ink3);
+      margin-bottom: 12px;
+    }
+    .pb-badge.connected { border-color: var(--pos); color: var(--pos); }
+    .pb-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+    @media(max-width: 900px) {
+      .page-body { grid-template-columns: 1fr; padding: 0 20px; }
+      .main-col { padding-right: 0; border-right: none; }
+      .side-col { padding-left: 0; border-top: 1px solid var(--rule); padding-top: 24px; }
+      .masthead { padding: 0 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-top">
+    <span class="edition" id="editionDate"></span>
+    <h1 class="masthead-title">Pulse<em>Check</em></h1>
+    <span class="masthead-sub">Twitter · VADER NLP</span>
+  </div>
+  <div class="masthead-tagline">Real-time sentiment intelligence from the public conversation</div>
+</header>
+
+<div class="page-body">
+  <!-- MAIN COLUMN -->
+  <div class="main-col">
+    <div class="search-wrap">
+      <div class="search-kicker">New Analysis</div>
+      <h2 class="search-headline">What is the world <em>saying right now?</em></h2>
+      <div class="search-form">
+        <span class="search-at">#</span>
+        <input type="text" id="keyword" placeholder="keyword, topic or phrase…" autocomplete="off"/>
+        <select class="count-pick" id="count">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="30">30</option>
+          <option value="40">40</option>
+        </select>
+        <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">Analyze →</button>
+      </div>
+      <p class="search-note">Backend on <code>localhost:5000</code> · <a href="https://github.com/d60/twikit" target="_blank">twikit</a> · <a href="https://pocketbase.io" target="_blank">PocketBase</a></p>
+    </div>
+
+    <div class="status-line" id="statusLine"></div>
+    <div id="errorBar"></div>
+    <div id="results">
+      <div class="empty-state">
+        <div class="empty-drop">S?</div>
+        <div class="empty-text">Enter a keyword to begin</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="side-col">
+    <div class="sidebar-section">
+      <div class="sidebar-heading">System</div>
+      <div class="pb-badge" id="pbBadge"><div class="pb-dot"></div>PocketBase</div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Recent Analyses</div>
+      <div id="historyList">
+        <div class="history-empty">Run your first analysis<br>to see history here.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = 'http://localhost:5000';
+  let allTweets = [], activeFilter = 'all';
+
+  // Edition date
+  document.getElementById('editionDate').textContent =
+    new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+  // Check health + load history on startup
+  window.addEventListener('load', async () => {
+    try {
+      const r = await fetch(`${API}/api/health`);
+      const d = await r.json();
+      const badge = document.getElementById('pbBadge');
+      if (d.pocketbase) {
+        badge.classList.add('connected');
+        badge.innerHTML = '<div class="pb-dot"></div>PocketBase ✓';
+      } else {
+        badge.innerHTML = '<div class="pb-dot"></div>PocketBase (offline)';
+      }
+    } catch(_) {}
+    loadHistory();
+  });
+
+  async function loadHistory() {
+    try {
+      const r = await fetch(`${API}/api/history?limit=10`);
+      const d = await r.json();
+      renderHistory(d.history || []);
+    } catch(_) {
+      renderHistory([]);
+    }
+  }
+
+  function renderHistory(items) {
+    const el = document.getElementById('historyList');
+    if (!items.length) {
+      el.innerHTML = '<div class="history-empty">No saved analyses yet.<br>Requires PocketBase running.</div>';
+      return;
+    }
+    el.innerHTML = items.map(item => `
+      <div class="history-item" onclick="loadHistoryItem('${item.keyword}')">
+        <div class="history-keyword">#${item.keyword}</div>
+        <div class="history-verdict ${item.overall_sentiment}">${item.overall_sentiment} · ${item.avg_compound > 0 ? '+' : ''}${item.avg_compound}</div>
+        <div class="history-meta">${item.total} tweets · ${fmtTime(item.analyzed_at)}</div>
+        <div class="history-bar">
+          <div class="hb-pos" style="width:${item.positive_pct}%"></div>
+          <div class="hb-neg" style="width:${item.negative_pct}%"></div>
+          <div class="hb-neu" style="width:${item.neutral_pct}%"></div>
+        </div>
+      </div>`).join('');
+  }
+
+  function loadHistoryItem(keyword) {
+    document.getElementById('keyword').value = keyword;
+    analyze();
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    } catch(_) { return iso; }
+  }
+
+  function fmtTweetTime(ts) {
+    if (!ts) return '—';
+    try {
+      // twikit returns strings like "Mon Feb 23 12:34:56 +0000 2026"
+      const d = new Date(ts);
+      if (isNaN(d)) return ts;
+      return d.toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    } catch(_) { return ts; }
+  }
+
+  async function analyze() {
+    const keyword = document.getElementById('keyword').value.trim();
+    const count   = document.getElementById('count').value;
+    if (!keyword) { showError('Please enter a keyword.'); return; }
+    clearError();
+    setLoading(true);
+    setStatus(`Scanning the conversation for "${keyword}"…`);
+    try {
+      const res  = await fetch(`${API}/api/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword, count: parseInt(count) })
+      });
+      const data = await res.json();
+      if (!res.ok) { showError(data.error || 'Server error.'); setStatus(''); return; }
+      if (!data.tweets?.length) { showError('No tweets found for this keyword.'); setStatus(''); return; }
+      allTweets = data.tweets;
+      renderResults(data.summary, 'all');
+      setStatus(`✦ Analysis complete — ${data.summary.total} tweets · ${new Date().toLocaleTimeString()}`);
+      loadHistory(); // refresh sidebar
+    } catch(e) {
+      showError('Cannot reach backend. Is Flask running on port 5000?');
+      setStatus('');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function renderResults(summary, filter) {
+    activeFilter = filter;
+    const filtered = filter === 'all' ? allTweets : allTweets.filter(t => t.label === filter);
+    document.getElementById('results').innerHTML = `
+      <div class="section-rule"><span class="section-rule-label">Verdict</span><div class="section-rule-line"></div></div>
+      <div class="verdict">
+        <div class="verdict-main">
+          <div class="verdict-eyebrow">Overall · "${summary.keyword}"</div>
+          <div class="verdict-word ${summary.overall_sentiment}">${summary.overall_sentiment.toUpperCase()}</div>
+          <div class="verdict-compound">avg compound: ${summary.avg_compound > 0 ? '+' : ''}${summary.avg_compound}</div>
+        </div>
+        <div class="verdict-stats">
+          <div class="v-stat">
+            <div class="v-stat-num tot">${summary.total}</div>
+            <div class="v-stat-label">Total</div>
+          </div>
+          <div class="v-stat">
+            <div class="v-stat-num pos">${summary.positive_pct}%</div>
+            <div class="v-stat-label">Positive</div>
+          </div>
+          <div class="v-stat">
+            <div class="v-stat-num neg">${summary.negative_pct}%</div>
+            <div class="v-stat-label">Negative</div>
+          </div>
+          <div class="v-stat">
+            <div class="v-stat-num neu">${summary.neutral_pct}%</div>
+            <div class="v-stat-label">Neutral</div>
+          </div>
+        </div>
+      </div>
+      <div class="dist-bar-wrap">
+        <div class="dist-bar">
+          <div class="db-pos" style="width:${summary.positive_pct}%"></div>
+          <div class="db-neg" style="width:${summary.negative_pct}%"></div>
+          <div class="db-neu" style="width:${summary.neutral_pct}%"></div>
+        </div>
+        <div class="dist-legend">
+          <div class="dl-item"><div class="dl-swatch" style="background:var(--pos)"></div>Positive ${summary.positive_pct}%</div>
+          <div class="dl-item"><div class="dl-swatch" style="background:var(--neg)"></div>Negative ${summary.negative_pct}%</div>
+          <div class="dl-item"><div class="dl-swatch" style="background:#c9a84c"></div>Neutral ${summary.neutral_pct}%</div>
+        </div>
+      </div>
+      <div class="section-rule"><span class="section-rule-label">Tweet Feed</span><div class="section-rule-line"></div></div>
+      <div class="tweet-controls">
+        <div class="tweet-count-label">${filtered.length} ${filter === 'all' ? 'total' : filter} tweets</div>
+        <div class="filter-group">
+          ${['all','positive','negative','neutral'].map(f =>
+            `<button class="filter-btn ${activeFilter===f?'active':''}" onclick="applyFilter('${f}')">${f}</button>`
+          ).join('')}
+        </div>
+      </div>
+      <table class="tweet-table">
+        <thead>
+          <tr>
+            <th style="width:80px">Label</th>
+            <th>Tweet</th>
+            <th style="width:90px">Engage</th>
+            <th style="width:72px">Score</th>
+          </tr>
+        </thead>
+        <tbody id="tweetBody">
+          ${renderRows(filtered)}
+        </tbody>
+      </table>
+    `;
+  }
+
+  // Detect if text contains non-Latin/non-ASCII characters (likely non-English)
+  function isNonEnglish(text) {
+    // Match scripts like Devanagari, Malayalam, Arabic, CJK, Cyrillic, etc.
+    return /[\u0080-\uFFFF]/.test(text) &&
+           (text.replace(/[\u0000-\u007F]/g, '').length / text.length) > 0.3;
+  }
+
+  function tweetUrl(id) {
+    return `https://x.com/i/web/status/${id}`;
+  }
+
+  function renderRows(tweets) {
+    if (!tweets.length) return `<tr><td colspan="4" style="text-align:center;padding:32px;color:var(--ink3);font-family:'DM Mono',monospace;font-size:11px">No tweets match this filter</td></tr>`;
+    return tweets.map((t, i) => {
+      const nonEng = isNonEnglish(t.text);
+      const url    = tweetUrl(t.id);
+      return `
+      <tr class="${nonEng ? 'non-english-row' : ''}" style="animation-delay:${Math.min(i*0.035,0.5)}s">
+        <td>
+          <span class="tag tag-${t.label}">${t.label}</span>
+        </td>
+        <td class="tweet-text-cell">
+          ${escapeHtml(t.text)}
+          <div class="tweet-footer">
+            <a class="tweet-time" href="${url}" target="_blank" rel="noopener">
+              🕐 ${fmtTweetTime(t.created_at)} ↗
+            </a>
+            ${nonEng ? '<span class="non-english-badge">🌐 non-english · VADER may be inaccurate</span>' : ''}
+          </div>
+        </td>
+        <td class="tweet-meta-cell"><span class="likes">♥ ${t.likes}</span><br>↻ ${t.retweets}</td>
+        <td class="score-cell ${t.compound>0?'score-pos':t.compound<0?'score-neg':'score-neu'}">
+          ${t.compound>0?'+':''}${t.compound.toFixed(3)}
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function applyFilter(filter) {
+    activeFilter = filter;
+    const filtered = filter === 'all' ? allTweets : allTweets.filter(t => t.label === filter);
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.textContent === filter));
+    document.querySelector('.tweet-count-label').textContent = `${filtered.length} ${filter === 'all' ? 'total' : filter} tweets`;
+    document.getElementById('tweetBody').innerHTML = renderRows(filtered);
+  }
+
+  function escapeHtml(t) {
+    return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function setLoading(on) {
+    const btn = document.getElementById('analyzeBtn');
+    btn.disabled = on;
+    btn.textContent = on ? 'Scanning…' : 'Analyze →';
+  }
+  function setStatus(msg) {
+    const el = document.getElementById('statusLine');
+    el.innerHTML = msg ? `${msg.includes('Scanning') ? '<div class="status-dot"></div>' : ''}${msg}` : '';
+  }
+  function showError(msg) {
+    document.getElementById('errorBar').innerHTML = `<div class="error-inner">⚠ ${msg}</div>`;
+  }
+  function clearError() { document.getElementById('errorBar').innerHTML = ''; }
+  document.getElementById('keyword').addEventListener('keydown', e => { if (e.key === 'Enter') analyze(); });
+</script>
+</body>
+</html>

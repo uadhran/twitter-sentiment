@@ -1,0 +1,274 @@
+import asyncio
+import os
+import re
+import json
+import httpx
+from datetime import datetime, timezone
+
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from dotenv import load_dotenv
+from twikit import Client
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+load_dotenv()
+
+app = Flask(__name__)
+CORS(app)
+
+analyzer = SentimentIntensityAnalyzer()
+twitter_client = Client("en-US")
+_logged_in = False
+
+PB_URL = os.getenv("POCKETBASE_URL", "http://127.0.0.1:8090")
+PB_EMAIL = os.getenv("POCKETBASE_EMAIL", "")
+PB_PASSWORD = os.getenv("POCKETBASE_PASSWORD", "")
+_pb_token = None
+
+
+# ── PocketBase auth ───────────────────────────────────────────────────────────
+
+
+def pb_token() -> str | None:
+    """Authenticate with PocketBase superuser and cache token."""
+    global _pb_token
+    if _pb_token:
+        return _pb_token
+    if not PB_EMAIL or not PB_PASSWORD:
+        return None
+    try:
+        r = httpx.post(
+            f"{PB_URL}/api/collections/_superusers/auth-with-password",
+            json={"identity": PB_EMAIL, "password": PB_PASSWORD},
+            timeout=5,
+        )
+        if r.status_code == 200:
+            _pb_token = r.json().get("token")
+            return _pb_token
+    except Exception as e:
+        print(f"[pocketbase] Auth failed: {e}")
+    return None
+
+
+def pb_save(summary: dict, tweets: list):
+    """Save analysis + tweets to PocketBase (best-effort, non-blocking)."""
+    token = pb_token()
+    if not token:
+        print("[pocketbase] Skipping save — no token (PocketBase not configured)")
+        return
+
+    headers = {"Authorization": token}
+
+    try:
+        # 1. Save analysis summary
+        r = httpx.post(
+            f"{PB_URL}/api/collections/analyses/records",
+            headers=headers,
+            json={
+                "keyword": summary["keyword"],
+                "total": summary["total"],
+                "positive": summary["positive"],
+                "negative": summary["negative"],
+                "neutral": summary["neutral"],
+                "positive_pct": summary["positive_pct"],
+                "negative_pct": summary["negative_pct"],
+                "neutral_pct": summary["neutral_pct"],
+                "avg_compound": summary["avg_compound"],
+                "overall_sentiment": summary["overall_sentiment"],
+                "analyzed_at": summary["analyzed_at"],
+            },
+            timeout=10,
+        )
+        if r.status_code not in (200, 201):
+            print(f"[pocketbase] Failed to save analysis: {r.text}")
+            return
+
+        analysis_id = r.json().get("id")
+        print(f"[pocketbase] Saved analysis {analysis_id} for '{summary['keyword']}'")
+
+        # 2. Save tweets in batches of 10
+        for i in range(0, len(tweets), 10):
+            batch = tweets[i : i + 10]
+            for t in batch:
+                httpx.post(
+                    f"{PB_URL}/api/collections/tweets/records",
+                    headers=headers,
+                    json={
+                        "analysis": analysis_id,
+                        "tweet_id": t["id"],
+                        "text": t["text"],
+                        "label": t["label"],
+                        "compound": t["compound"],
+                        "likes": t["likes"],
+                        "retweets": t["retweets"],
+                        "created_at": t["created_at"] or "",
+                    },
+                    timeout=10,
+                )
+        print(f"[pocketbase] Saved {len(tweets)} tweets")
+
+    except Exception as e:
+        print(f"[pocketbase] Save error: {e}")
+
+
+def pb_history(limit: int = 20) -> list:
+    """Fetch recent analyses from PocketBase."""
+    token = pb_token()
+    if not token:
+        return []
+    try:
+        r = httpx.get(
+            f"{PB_URL}/api/collections/analyses/records",
+            headers={"Authorization": token},
+            params={"sort": "-analyzed_at", "perPage": limit},
+            timeout=5,
+        )
+        if r.status_code == 200:
+            return r.json().get("items", [])
+    except Exception as e:
+        print(f"[pocketbase] History fetch error: {e}")
+    return []
+
+
+# ── Twitter auth ──────────────────────────────────────────────────────────────
+
+
+def convert_cookies_if_needed(cookies_path: str):
+    with open(cookies_path, "r") as f:
+        data = json.load(f)
+    if isinstance(data, dict):
+        return cookies_path
+    if isinstance(data, list):
+        converted = {c["name"]: c["value"] for c in data}
+        out = cookies_path.replace(".json", "_twikit.json")
+        with open(out, "w") as f:
+            json.dump(converted, f, indent=2)
+        print(f"[auth] Converted Cookie-Editor cookies → {out}")
+        return out
+    raise ValueError("Unknown cookies.json format")
+
+
+async def ensure_login():
+    global _logged_in
+    if _logged_in:
+        return
+    cookies_path = os.getenv("COOKIES_FILE", "cookies.json")
+    if not os.path.exists(cookies_path):
+        raise ValueError(
+            f"'{cookies_path}' not found. Export cookies from x.com "
+            "using the Cookie-Editor extension and save as backend/cookies.json"
+        )
+    final = convert_cookies_if_needed(cookies_path)
+    twitter_client.load_cookies(final)
+    _logged_in = True
+    print(f"[auth] Cookies loaded from {final}")
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def clean_tweet(text: str) -> str:
+    text = re.sub(r"http\S+|www\S+", "", text)
+    text = re.sub(r"@\w+", "", text)
+    text = re.sub(r"#(\w+)", r"\1", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def classify(compound: float) -> str:
+    if compound >= 0.05:
+        return "positive"
+    if compound <= -0.05:
+        return "negative"
+    return "neutral"
+
+
+async def fetch_and_analyze(keyword: str, count: int) -> dict:
+    await ensure_login()
+    tweets = await twitter_client.search_tweet(keyword, product="Latest", count=count)
+
+    results, sentiments, compounds = (
+        [],
+        {"positive": 0, "negative": 0, "neutral": 0},
+        [],
+    )
+
+    for tweet in tweets:
+        cleaned = clean_tweet(tweet.text)
+        scores = analyzer.polarity_scores(cleaned)
+        label = classify(scores["compound"])
+        sentiments[label] += 1
+        compounds.append(scores["compound"])
+        results.append(
+            {
+                "id": str(tweet.id),
+                "text": tweet.text,
+                "cleaned": cleaned,
+                "compound": round(scores["compound"], 4),
+                "positive": round(scores["pos"], 4),
+                "negative": round(scores["neg"], 4),
+                "neutral": round(scores["neu"], 4),
+                "label": label,
+                "created_at": tweet.created_at or None,
+                "likes": getattr(tweet, "favorite_count", 0) or 0,
+                "retweets": getattr(tweet, "retweet_count", 0) or 0,
+            }
+        )
+
+    total = len(results)
+    avg_compound = round(sum(compounds) / total, 4) if total else 0
+    summary = {
+        "total": total,
+        "keyword": keyword,
+        "positive": sentiments["positive"],
+        "negative": sentiments["negative"],
+        "neutral": sentiments["neutral"],
+        "positive_pct": round(sentiments["positive"] / total * 100, 1) if total else 0,
+        "negative_pct": round(sentiments["negative"] / total * 100, 1) if total else 0,
+        "neutral_pct": round(sentiments["neutral"] / total * 100, 1) if total else 0,
+        "avg_compound": avg_compound,
+        "overall_sentiment": classify(avg_compound),
+        "analyzed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return {"tweets": results, "summary": summary, "keyword": keyword}
+
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+
+
+@app.route("/api/analyze", methods=["POST"])
+def analyze():
+    data = request.get_json()
+    keyword = data.get("keyword", "").strip()
+    count = min(int(data.get("count", 20)), 40)
+    if not keyword:
+        return jsonify({"error": "Keyword is required"}), 400
+    try:
+        result = asyncio.run(fetch_and_analyze(keyword, count))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": f"Twikit error: {str(e)}"}), 502
+    if not result["tweets"]:
+        return jsonify({"error": "No tweets found for this keyword."}), 404
+
+    # Save to PocketBase async (fire and forget)
+    pb_save(result["summary"], result["tweets"])
+
+    return jsonify(result)
+
+
+@app.route("/api/history", methods=["GET"])
+def history():
+    """Return recent analyses from PocketBase."""
+    limit = int(request.args.get("limit", 20))
+    return jsonify({"history": pb_history(limit)})
+
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    pb_ok = pb_token() is not None
+    return jsonify({"status": "ok", "pocketbase": pb_ok})
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)

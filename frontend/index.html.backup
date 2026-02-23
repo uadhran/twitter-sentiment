@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SentimentPulse — Twitter Analysis</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #08090d;
+      --surface: #0f1117;
+      --surface2: #161921;
+      --border: #1e2330;
+      --border2: #252c3d;
+      --text: #e2e8f8;
+      --muted: #5a6480;
+      --accent: #00e5ff;
+      --pos: #00e676;
+      --neg: #ff3d71;
+      --neu: #ffb300;
+      --pos-dim: rgba(0,230,118,0.12);
+      --neg-dim: rgba(255,61,113,0.12);
+      --neu-dim: rgba(255,179,0,0.12);
+      --glow: rgba(0,229,255,0.15);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Scanline overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* Noise texture */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9998;
+      opacity: 0.4;
+    }
+
+    header {
+      padding: 24px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    header::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.4;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-icon {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent), #7b61ff);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .logo-text {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .logo-text span { color: var(--accent); }
+
+    .header-tag {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      padding: 4px 10px;
+      border-radius: 4px;
+      letter-spacing: 1px;
+    }
+
+    main { padding: 40px; max-width: 1400px; margin: 0 auto; }
+
+    /* Search bar */
+    .search-section {
+      margin-bottom: 40px;
+    }
+    .search-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    .search-row {
+      display: flex;
+      gap: 12px;
+      align-items: stretch;
+    }
+    .search-input-wrap {
+      flex: 1;
+      position: relative;
+    }
+    .search-prefix {
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-family: 'Space Mono', monospace;
+      font-size: 14px;
+      color: var(--accent);
+      user-select: none;
+    }
+    input[type="text"] {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 14px 16px 14px 48px;
+      font-family: 'Space Mono', monospace;
+      font-size: 15px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input[type="text"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--glow);
+    }
+    input[type="text"]::placeholder { color: var(--muted); }
+
+    .count-select {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-family: 'Space Mono', monospace;
+      font-size: 13px;
+      color: var(--text);
+      outline: none;
+      cursor: pointer;
+      min-width: 100px;
+    }
+    .count-select:focus { border-color: var(--accent); }
+
+    .analyze-btn {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      padding: 14px 28px;
+      font-family: 'Syne', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+      white-space: nowrap;
+    }
+    .analyze-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,229,255,0.4); }
+    .analyze-btn:active { transform: translateY(0); }
+    .analyze-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    /* API Key notice */
+    .api-notice {
+      margin-top: 12px;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .api-notice a { color: var(--accent); text-decoration: none; }
+
+    /* Status bar */
+    #status {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 32px;
+      min-height: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: blink 1s infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    /* Summary cards */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: var(--border2); }
+    .card-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .card-value {
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .card-sub {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .card-pos .card-value { color: var(--pos); }
+    .card-neg .card-value { color: var(--neg); }
+    .card-neu .card-value { color: var(--neu); }
+    .card-overall .card-value { color: var(--accent); }
+
+    .card-bg {
+      position: absolute;
+      right: -10px; bottom: -10px;
+      font-size: 64px;
+      opacity: 0.06;
+      line-height: 1;
+    }
+
+    /* Sentiment bar */
+    .bar-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px 28px;
+      margin-bottom: 40px;
+    }
+    .bar-header {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .sentiment-bar {
+      height: 12px;
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      background: var(--surface2);
+      margin-bottom: 16px;
+    }
+    .bar-pos { background: var(--pos); transition: width 0.8s cubic-bezier(0.4,0,0.2,1); }
+    .bar-neg { background: var(--neg); transition: width 0.8s cubic-bezier(0.4,0,0.2,1) 0.1s; }
+    .bar-neu { background: var(--neu); transition: width 0.8s cubic-bezier(0.4,0,0.2,1) 0.2s; }
+    .bar-legend {
+      display: flex;
+      gap: 24px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .legend-dot {
+      width: 8px; height: 8px;
+      border-radius: 2px;
+    }
+
+    /* Tweets */
+    .tweets-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .tweets-header {
+      padding: 20px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .tweets-title {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .filter-tabs {
+      display: flex;
+      gap: 4px;
+    }
+    .filter-tab {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      padding: 5px 12px;
+      border-radius: 4px;
+      border: 1px solid transparent;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+      letter-spacing: 0.5px;
+    }
+    .filter-tab:hover { color: var(--text); border-color: var(--border2); }
+    .filter-tab.active { color: var(--accent); border-color: var(--accent); background: var(--glow); }
+
+    .tweet-list { max-height: 600px; overflow-y: auto; }
+    .tweet-list::-webkit-scrollbar { width: 4px; }
+    .tweet-list::-webkit-scrollbar-track { background: var(--surface); }
+    .tweet-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    .tweet-item {
+      padding: 18px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      transition: background 0.15s;
+      animation: fadeIn 0.3s ease both;
+    }
+    @keyframes fadeIn { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform:none; } }
+    .tweet-item:last-child { border-bottom: none; }
+    .tweet-item:hover { background: var(--surface2); }
+
+    .sentiment-pill {
+      flex-shrink: 0;
+      width: 80px;
+      text-align: center;
+      padding: 4px 0;
+      border-radius: 4px;
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .pill-positive { background: var(--pos-dim); color: var(--pos); border: 1px solid rgba(0,230,118,0.3); }
+    .pill-negative { background: var(--neg-dim); color: var(--neg); border: 1px solid rgba(255,61,113,0.3); }
+    .pill-neutral  { background: var(--neu-dim); color: var(--neu); border: 1px solid rgba(255,179,0,0.3); }
+
+    .tweet-content { flex: 1; min-width: 0; }
+    .tweet-text {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .tweet-meta {
+      display: flex;
+      gap: 16px;
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .compound-score {
+      flex-shrink: 0;
+      font-family: 'Space Mono', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      min-width: 56px;
+      text-align: right;
+      padding-top: 2px;
+    }
+    .score-pos { color: var(--pos); }
+    .score-neg { color: var(--neg); }
+    .score-neu { color: var(--neu); }
+
+    /* Empty state */
+    .empty-state {
+      padding: 80px 40px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
+    .empty-text { font-family: 'Space Mono', monospace; font-size: 13px; line-height: 1.7; }
+
+    /* Error */
+    .error-bar {
+      background: rgba(255,61,113,0.1);
+      border: 1px solid rgba(255,61,113,0.3);
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      color: var(--neg);
+      margin-bottom: 24px;
+    }
+
+    /* Loading spinner */
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--border2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 768px) {
+      header { padding: 16px 20px; }
+      main { padding: 20px; }
+      .search-row { flex-direction: column; }
+      .summary-grid { grid-template-columns: repeat(2, 1fr); }
+      .tweet-item { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <div class="logo-icon">📡</div>
+      <div class="logo-text">Sentiment<span>Pulse</span></div>
+    </div>
+    <div class="header-tag">TWITTER / X — VADER NLP</div>
+  </header>
+
+  <main>
+    <div class="search-section">
+      <div class="search-label">// KEYWORD SEARCH</div>
+      <div class="search-row">
+        <div class="search-input-wrap">
+          <span class="search-prefix">#</span>
+          <input type="text" id="keyword" placeholder="Enter keyword, hashtag, or phrase..." />
+        </div>
+        <select class="count-select" id="count">
+          <option value="10">10 tweets</option>
+          <option value="25">25 tweets</option>
+          <option value="50" selected>50 tweets</option>
+          <option value="100">100 tweets</option>
+        </select>
+        <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">ANALYZE →</button>
+      </div>
+      <div class="api-notice">
+        Backend must be running on <code>localhost:5000</code> with <code>TWITTER_BEARER_TOKEN</code> set.
+        <a href="https://developer.twitter.com/en/portal/dashboard" target="_blank">Get API key →</a>
+      </div>
+    </div>
+
+    <div id="statusBar" class="hidden"></div>
+    <div id="errorBar"></div>
+    <div id="summarySection"></div>
+    <div id="barSection"></div>
+    <div id="tweetsSection">
+      <div class="tweets-section">
+        <div class="empty-state">
+          <div class="empty-icon">🔍</div>
+          <div class="empty-text">Enter a keyword and click ANALYZE<br>to fetch and score recent tweets in real-time.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let allTweets = [];
+    let activeFilter = 'all';
+
+    async function analyze() {
+      const keyword = document.getElementById('keyword').value.trim();
+      const count = document.getElementById('count').value;
+      if (!keyword) { showError('Please enter a keyword.'); return; }
+
+      clearError();
+      setLoading(true);
+      setStatus(`Fetching ${count} tweets for "${keyword}"...`);
+
+      try {
+        const res = await fetch('http://localhost:5000/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keyword, count: parseInt(count) })
+        });
+        const data = await res.json();
+        if (!res.ok) { showError(data.error || 'Server error.'); setStatus(''); return; }
+        if (!data.tweets || data.tweets.length === 0) {
+          showError('No recent tweets found for this keyword.'); setStatus(''); return;
+        }
+        allTweets = data.tweets;
+        renderSummary(data.summary);
+        renderBar(data.summary);
+        renderTweets('all');
+        setStatus(`✓ Analyzed ${data.summary.total} tweets · ${new Date().toLocaleTimeString()}`);
+      } catch (e) {
+        showError('Could not connect to backend. Is the Flask server running on port 5000?');
+        setStatus('');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function renderSummary(s) {
+      const overall = s.overall_sentiment;
+      const sentimentEmoji = { positive: '🟢', negative: '🔴', neutral: '🟡' };
+      document.getElementById('summarySection').innerHTML = `
+        <div class="summary-grid" style="margin-bottom:24px;">
+          <div class="card card-overall">
+            <div class="card-label">Overall Sentiment</div>
+            <div class="card-value" style="font-size:22px;text-transform:uppercase;letter-spacing:-0.5px;">${overall}</div>
+            <div class="card-sub">avg compound: ${s.avg_compound}</div>
+            <div class="card-bg">${sentimentEmoji[overall]}</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Total Tweets</div>
+            <div class="card-value" style="color:var(--text)">${s.total}</div>
+            <div class="card-sub">analyzed</div>
+            <div class="card-bg">📊</div>
+          </div>
+          <div class="card card-pos">
+            <div class="card-label">Positive</div>
+            <div class="card-value">${s.positive_pct}%</div>
+            <div class="card-sub">${s.positive} tweets</div>
+            <div class="card-bg">↑</div>
+          </div>
+          <div class="card card-neg">
+            <div class="card-label">Negative</div>
+            <div class="card-value">${s.negative_pct}%</div>
+            <div class="card-sub">${s.negative} tweets</div>
+            <div class="card-bg">↓</div>
+          </div>
+          <div class="card card-neu">
+            <div class="card-label">Neutral</div>
+            <div class="card-value">${s.neutral_pct}%</div>
+            <div class="card-sub">${s.neutral} tweets</div>
+            <div class="card-bg">→</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderBar(s) {
+      document.getElementById('barSection').innerHTML = `
+        <div class="bar-section">
+          <div class="bar-header">// SENTIMENT DISTRIBUTION</div>
+          <div class="sentiment-bar">
+            <div class="bar-pos" style="width:${s.positive_pct}%"></div>
+            <div class="bar-neg" style="width:${s.negative_pct}%"></div>
+            <div class="bar-neu" style="width:${s.neutral_pct}%"></div>
+          </div>
+          <div class="bar-legend">
+            <div class="legend-item"><div class="legend-dot" style="background:var(--pos)"></div>POSITIVE ${s.positive_pct}%</div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--neg)"></div>NEGATIVE ${s.negative_pct}%</div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--neu)"></div>NEUTRAL ${s.neutral_pct}%</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTweets(filter) {
+      activeFilter = filter;
+      const filtered = filter === 'all' ? allTweets : allTweets.filter(t => t.label === filter);
+      const tabs = ['all','positive','negative','neutral'];
+
+      document.getElementById('tweetsSection').innerHTML = `
+        <div class="tweets-section">
+          <div class="tweets-header">
+            <div class="tweets-title">// TWEET FEED (${filtered.length})</div>
+            <div class="filter-tabs">
+              ${tabs.map(t => `<button class="filter-tab ${activeFilter===t?'active':''}" onclick="renderTweets('${t}')">${t.toUpperCase()}</button>`).join('')}
+            </div>
+          </div>
+          <div class="tweet-list">
+            ${filtered.length === 0
+              ? `<div class="empty-state"><div class="empty-text">No ${filter} tweets found.</div></div>`
+              : filtered.map((t, i) => `
+                <div class="tweet-item" style="animation-delay:${Math.min(i*0.03,0.5)}s">
+                  <div class="sentiment-pill pill-${t.label}">${t.label}</div>
+                  <div class="tweet-content">
+                    <div class="tweet-text">${escapeHtml(t.text)}</div>
+                    <div class="tweet-meta">
+                      <span>♥ ${t.likes}</span>
+                      <span>↻ ${t.retweets}</span>
+                      ${t.created_at ? `<span>${new Date(t.created_at).toLocaleString()}</span>` : ''}
+                    </div>
+                  </div>
+                  <div class="compound-score ${t.compound>0?'score-pos':t.compound<0?'score-neg':'score-neu'}">${t.compound > 0 ? '+' : ''}${t.compound.toFixed(3)}</div>
+                </div>`).join('')
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    function escapeHtml(text) {
+      return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function setLoading(on) {
+      const btn = document.getElementById('analyzeBtn');
+      btn.disabled = on;
+      btn.textContent = on ? 'ANALYZING...' : 'ANALYZE →';
+    }
+
+    function setStatus(msg) {
+      const el = document.getElementById('statusBar');
+      if (!msg) { el.innerHTML = ''; return; }
+      const isLoading = msg.includes('Fetching');
+      el.innerHTML = `<div id="status">${isLoading ? '<div class="dot"></div>' : ''}<span>${msg}</span></div>`;
+    }
+
+    function showError(msg) {
+      document.getElementById('errorBar').innerHTML = `<div class="error-bar">⚠ ${msg}</div>`;
+    }
+    function clearError() { document.getElementById('errorBar').innerHTML = ''; }
+
+    document.getElementById('keyword').addEventListener('keydown', e => {
+      if (e.key === 'Enter') analyze();
+    });
+  </script>
+</body>
+</html>
