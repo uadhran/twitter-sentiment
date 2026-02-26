@@ -1,6 +1,6 @@
 flask==3.0.3
 flask-cors==4.0.1
-twikit @ git+https://github.com/d60/twikit.git
+twikit @ git+https://github.com/d60/twikit.git@3b18105ba0adb25ab78ba81d5df78825674f000d
 vaderSentiment==3.3.2
 python-dotenv==1.0.1
 httpx==0.27.0

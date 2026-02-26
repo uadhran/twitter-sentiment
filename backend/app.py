@@ -1,10 +1,14 @@
 import asyncio
+import json
+import logging
 import os
 import re
-import json
-import httpx
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timezone
+from typing import Any
 
+import httpx
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -13,12 +17,39 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 load_dotenv()
 
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+DEFAULT_TWEET_COUNT = 20
+MAX_TWEET_COUNT = 40
+DEFAULT_HISTORY_LIMIT = 20
+MAX_HISTORY_LIMIT = 100
+VADER_POS_THRESHOLD = 0.05
+VADER_NEG_THRESHOLD = -0.05
+PB_AUTH_TIMEOUT_SECONDS = 5
+PB_READ_TIMEOUT_SECONDS = 5
+PB_WRITE_TIMEOUT_SECONDS = 10
+PB_TWEET_BATCH_SIZE = 10
+RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMIT_MAX_REQUESTS = 30
+
 app = Flask(__name__)
-CORS(app)
+
+
+def get_cors_origins() -> list[str]:
+    raw = os.getenv("CORS_ORIGINS", "http://localhost,http://127.0.0.1,null")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+CORS(app, resources={r"/api/*": {"origins": get_cors_origins()}})
 
 analyzer = SentimentIntensityAnalyzer()
 twitter_client = Client("en-US")
 _logged_in = False
+_request_times: dict[str, deque[float]] = defaultdict(deque)
 
 PB_URL = os.getenv("POCKETBASE_URL", "http://127.0.0.1:8090")
 PB_EMAIL = os.getenv("POCKETBASE_EMAIL", "")
@@ -40,21 +71,21 @@ def pb_token() -> str | None:
         r = httpx.post(
             f"{PB_URL}/api/collections/_superusers/auth-with-password",
             json={"identity": PB_EMAIL, "password": PB_PASSWORD},
-            timeout=5,
+            timeout=PB_AUTH_TIMEOUT_SECONDS,
         )
         if r.status_code == 200:
             _pb_token = r.json().get("token")
             return _pb_token
     except Exception as e:
-        print(f"[pocketbase] Auth failed: {e}")
+        logger.warning("[pocketbase] Auth failed: %s", e)
     return None
 
 
-def pb_save(summary: dict, tweets: list):
+def pb_save(summary: dict[str, Any], tweets: list[dict[str, Any]]) -> None:
     """Save analysis + tweets to PocketBase (best-effort, non-blocking)."""
     token = pb_token()
     if not token:
-        print("[pocketbase] Skipping save — no token (PocketBase not configured)")
+        logger.info("[pocketbase] Skipping save: no token (PocketBase not configured)")
         return
 
     headers = {"Authorization": token}
@@ -77,18 +108,18 @@ def pb_save(summary: dict, tweets: list):
                 "overall_sentiment": summary["overall_sentiment"],
                 "analyzed_at": summary["analyzed_at"],
             },
-            timeout=10,
+            timeout=PB_WRITE_TIMEOUT_SECONDS,
         )
         if r.status_code not in (200, 201):
-            print(f"[pocketbase] Failed to save analysis: {r.text}")
+            logger.warning("[pocketbase] Failed to save analysis: %s", r.text)
             return
 
         analysis_id = r.json().get("id")
-        print(f"[pocketbase] Saved analysis {analysis_id} for '{summary['keyword']}'")
+        logger.info("[pocketbase] Saved analysis %s for '%s'", analysis_id, summary["keyword"])
 
-        # 2. Save tweets in batches of 10
-        for i in range(0, len(tweets), 10):
-            batch = tweets[i : i + 10]
+        # 2. Save tweets in batches.
+        for i in range(0, len(tweets), PB_TWEET_BATCH_SIZE):
+            batch = tweets[i : i + PB_TWEET_BATCH_SIZE]
             for t in batch:
                 httpx.post(
                     f"{PB_URL}/api/collections/tweets/records",
@@ -103,12 +134,12 @@ def pb_save(summary: dict, tweets: list):
                         "retweets": t["retweets"],
                         "created_at": t["created_at"] or "",
                     },
-                    timeout=10,
+                    timeout=PB_WRITE_TIMEOUT_SECONDS,
                 )
-        print(f"[pocketbase] Saved {len(tweets)} tweets")
+        logger.info("[pocketbase] Saved %s tweets", len(tweets))
 
     except Exception as e:
-        print(f"[pocketbase] Save error: {e}")
+        logger.warning("[pocketbase] Save error: %s", e)
 
 
 def pb_history(limit: int = 20) -> list:
@@ -121,19 +152,19 @@ def pb_history(limit: int = 20) -> list:
             f"{PB_URL}/api/collections/analyses/records",
             headers={"Authorization": token},
             params={"sort": "-analyzed_at", "perPage": limit},
-            timeout=5,
+            timeout=PB_READ_TIMEOUT_SECONDS,
         )
         if r.status_code == 200:
             return r.json().get("items", [])
     except Exception as e:
-        print(f"[pocketbase] History fetch error: {e}")
+        logger.warning("[pocketbase] History fetch error: %s", e)
     return []
 
 
 # ── Twitter auth ──────────────────────────────────────────────────────────────
 
 
-def convert_cookies_if_needed(cookies_path: str):
+def convert_cookies_if_needed(cookies_path: str) -> str:
     with open(cookies_path, "r") as f:
         data = json.load(f)
     if isinstance(data, dict):
@@ -143,7 +174,7 @@ def convert_cookies_if_needed(cookies_path: str):
         out = cookies_path.replace(".json", "_twikit.json")
         with open(out, "w") as f:
             json.dump(converted, f, indent=2)
-        print(f"[auth] Converted Cookie-Editor cookies → {out}")
+        logger.info("[auth] Converted Cookie-Editor cookies to %s", out)
         return out
     raise ValueError("Unknown cookies.json format")
 
@@ -161,7 +192,7 @@ async def ensure_login():
     final = convert_cookies_if_needed(cookies_path)
     twitter_client.load_cookies(final)
     _logged_in = True
-    print(f"[auth] Cookies loaded from {final}")
+    logger.info("[auth] Cookies loaded from %s", final)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -175,11 +206,32 @@ def clean_tweet(text: str) -> str:
 
 
 def classify(compound: float) -> str:
-    if compound >= 0.05:
+    if compound >= VADER_POS_THRESHOLD:
         return "positive"
-    if compound <= -0.05:
+    if compound <= VADER_NEG_THRESHOLD:
         return "negative"
     return "neutral"
+
+
+def parse_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
+    """Parse bounded integer values for request params and payload fields."""
+    if value is None or value == "":
+        return default
+    parsed = int(value)
+    return max(minimum, min(parsed, maximum))
+
+
+def is_rate_limited(client_key: str) -> bool:
+    """Very lightweight in-memory rate limiting per client key."""
+    now = time.time()
+    bucket = _request_times[client_key]
+    cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+    while bucket and bucket[0] < cutoff:
+        bucket.popleft()
+    if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+        return True
+    bucket.append(now)
+    return False
 
 
 async def fetch_and_analyze(keyword: str, count: int) -> dict:
@@ -237,11 +289,25 @@ async def fetch_and_analyze(keyword: str, count: int) -> dict:
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     keyword = data.get("keyword", "").strip()
-    count = min(int(data.get("count", 20)), 40)
+    try:
+        count = parse_int(
+            data.get("count", DEFAULT_TWEET_COUNT),
+            default=DEFAULT_TWEET_COUNT,
+            minimum=1,
+            maximum=MAX_TWEET_COUNT,
+        )
+    except (TypeError, ValueError):
+        return jsonify({"error": "count must be an integer"}), 400
+
     if not keyword:
         return jsonify({"error": "Keyword is required"}), 400
+
+    client_key = (request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")).split(",")[0].strip()
+    if is_rate_limited(client_key):
+        return jsonify({"error": "Too many requests. Please retry shortly."}), 429
+
     try:
         result = asyncio.run(fetch_and_analyze(keyword, count))
     except ValueError as e:
@@ -260,7 +326,15 @@ def analyze():
 @app.route("/api/history", methods=["GET"])
 def history():
     """Return recent analyses from PocketBase."""
-    limit = int(request.args.get("limit", 20))
+    try:
+        limit = parse_int(
+            request.args.get("limit", DEFAULT_HISTORY_LIMIT),
+            default=DEFAULT_HISTORY_LIMIT,
+            minimum=1,
+            maximum=MAX_HISTORY_LIMIT,
+        )
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit must be an integer"}), 400
     return jsonify({"history": pb_history(limit)})
 
 
@@ -271,4 +345,7 @@ def health():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(
+        debug=os.getenv("FLASK_DEBUG", "false").lower() == "true",
+        port=int(os.getenv("PORT", "5000")),
+    )

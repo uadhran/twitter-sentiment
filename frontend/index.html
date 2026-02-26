@@ -323,6 +323,7 @@
 
 <script>
   const API = 'http://localhost:5000';
+  const SENTIMENT_CLASSES = new Set(['positive', 'negative', 'neutral']);
   let allTweets = [], activeFilter = 'all';
 
   // Edition date
@@ -337,9 +338,9 @@
       const badge = document.getElementById('pbBadge');
       if (d.pocketbase) {
         badge.classList.add('connected');
-        badge.innerHTML = '<div class="pb-dot"></div>PocketBase ✓';
+        setPocketBaseBadge(badge, 'PocketBase ✓');
       } else {
-        badge.innerHTML = '<div class="pb-dot"></div>PocketBase (offline)';
+        setPocketBaseBadge(badge, 'PocketBase (offline)');
       }
     } catch(_) {}
     loadHistory();
@@ -361,17 +362,37 @@
       el.innerHTML = '<div class="history-empty">No saved analyses yet.<br>Requires PocketBase running.</div>';
       return;
     }
-    el.innerHTML = items.map(item => `
-      <div class="history-item" onclick="loadHistoryItem('${item.keyword}')">
-        <div class="history-keyword">#${item.keyword}</div>
-        <div class="history-verdict ${item.overall_sentiment}">${item.overall_sentiment} · ${item.avg_compound > 0 ? '+' : ''}${item.avg_compound}</div>
-        <div class="history-meta">${item.total} tweets · ${fmtTime(item.analyzed_at)}</div>
-        <div class="history-bar">
-          <div class="hb-pos" style="width:${item.positive_pct}%"></div>
-          <div class="hb-neg" style="width:${item.negative_pct}%"></div>
-          <div class="hb-neu" style="width:${item.neutral_pct}%"></div>
-        </div>
-      </div>`).join('');
+    el.textContent = '';
+    items.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'history-item';
+      row.addEventListener('click', () => loadHistoryItem(item.keyword || ''));
+
+      const keyword = document.createElement('div');
+      keyword.className = 'history-keyword';
+      keyword.textContent = `#${item.keyword || ''}`;
+
+      const verdict = document.createElement('div');
+      const verdictLabel = safeSentiment(item.overall_sentiment);
+      verdict.className = `history-verdict ${verdictLabel}`;
+      verdict.textContent = `${verdictLabel} · ${(item.avg_compound || 0) > 0 ? '+' : ''}${item.avg_compound || 0}`;
+
+      const meta = document.createElement('div');
+      meta.className = 'history-meta';
+      meta.textContent = `${item.total || 0} tweets · ${fmtTime(item.analyzed_at)}`;
+
+      const bar = document.createElement('div');
+      bar.className = 'history-bar';
+      bar.appendChild(historyBarSegment('hb-pos', item.positive_pct));
+      bar.appendChild(historyBarSegment('hb-neg', item.negative_pct));
+      bar.appendChild(historyBarSegment('hb-neu', item.neutral_pct));
+
+      row.appendChild(keyword);
+      row.appendChild(verdict);
+      row.appendChild(meta);
+      row.appendChild(bar);
+      el.appendChild(row);
+    });
   }
 
   function loadHistoryItem(keyword) {
@@ -427,12 +448,13 @@
   function renderResults(summary, filter) {
     activeFilter = filter;
     const filtered = filter === 'all' ? allTweets : allTweets.filter(t => t.label === filter);
+    const safeVerdict = safeSentiment(summary.overall_sentiment);
     document.getElementById('results').innerHTML = `
       <div class="section-rule"><span class="section-rule-label">Verdict</span><div class="section-rule-line"></div></div>
       <div class="verdict">
         <div class="verdict-main">
-          <div class="verdict-eyebrow">Overall · "${summary.keyword}"</div>
-          <div class="verdict-word ${summary.overall_sentiment}">${summary.overall_sentiment.toUpperCase()}</div>
+          <div class="verdict-eyebrow">Overall · "${escapeHtml(summary.keyword || '')}"</div>
+          <div class="verdict-word ${safeVerdict}">${safeVerdict.toUpperCase()}</div>
           <div class="verdict-compound">avg compound: ${summary.avg_compound > 0 ? '+' : ''}${summary.avg_compound}</div>
         </div>
         <div class="verdict-stats">
@@ -507,10 +529,11 @@
     return tweets.map((t, i) => {
       const nonEng = isNonEnglish(t.text);
       const url    = tweetUrl(t.id);
+      const label  = safeSentiment(t.label);
       return `
       <tr class="${nonEng ? 'non-english-row' : ''}" style="animation-delay:${Math.min(i*0.035,0.5)}s">
         <td>
-          <span class="tag tag-${t.label}">${t.label}</span>
+          <span class="tag tag-${label}">${label}</span>
         </td>
         <td class="tweet-text-cell">
           ${escapeHtml(t.text)}
@@ -538,7 +561,33 @@
   }
 
   function escapeHtml(t) {
-    return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return String(t)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
+  }
+  function safeSentiment(v) {
+    return SENTIMENT_CLASSES.has(v) ? v : 'neutral';
+  }
+  function clampPct(v) {
+    const n = Number(v);
+    if (Number.isNaN(n)) return 0;
+    return Math.max(0, Math.min(100, n));
+  }
+  function historyBarSegment(cls, width) {
+    const seg = document.createElement('div');
+    seg.className = cls;
+    seg.style.width = `${clampPct(width)}%`;
+    return seg;
+  }
+  function setPocketBaseBadge(el, label) {
+    el.textContent = '';
+    const dot = document.createElement('div');
+    dot.className = 'pb-dot';
+    el.appendChild(dot);
+    el.appendChild(document.createTextNode(label));
   }
   function setLoading(on) {
     const btn = document.getElementById('analyzeBtn');
@@ -547,12 +596,24 @@
   }
   function setStatus(msg) {
     const el = document.getElementById('statusLine');
-    el.innerHTML = msg ? `${msg.includes('Scanning') ? '<div class="status-dot"></div>' : ''}${msg}` : '';
+    el.textContent = '';
+    if (!msg) return;
+    if (msg.includes('Scanning')) {
+      const dot = document.createElement('div');
+      dot.className = 'status-dot';
+      el.appendChild(dot);
+    }
+    el.appendChild(document.createTextNode(msg));
   }
   function showError(msg) {
-    document.getElementById('errorBar').innerHTML = `<div class="error-inner">⚠ ${msg}</div>`;
+    const host = document.getElementById('errorBar');
+    host.textContent = '';
+    const box = document.createElement('div');
+    box.className = 'error-inner';
+    box.textContent = `⚠ ${msg}`;
+    host.appendChild(box);
   }
-  function clearError() { document.getElementById('errorBar').innerHTML = ''; }
+  function clearError() { document.getElementById('errorBar').textContent = ''; }
   document.getElementById('keyword').addEventListener('keydown', e => { if (e.key === 'Enter') analyze(); });
 </script>
 </body>
