@@ -195,7 +195,8 @@ backend/cookies.json
 backend/cookies_twikit.json
 backend/.env
 pb_data/
+frontend/pb_data/
 pb_migrations/
 *.zip
+*.backup
 pocketbase
-EOF
