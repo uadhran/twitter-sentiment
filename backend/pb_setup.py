@@ -5,7 +5,9 @@ Usage:
   python pb_setup.py
 """
 
-import os, httpx
+import os
+
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
