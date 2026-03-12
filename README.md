@@ -134,6 +134,14 @@ file:///home/youruser/twitter-sentiment/frontend/index.html
 
 No build step, no npm, no bundler needed.
 
+**API base config for deployment:**  
+If you host the frontend and backend on the same domain, the UI will call the same-origin `/api` automatically.  
+If your backend runs elsewhere, set a custom base URL on the `<body>` tag:
+
+```html
+<body data-api-base="https://your-backend.example.com">
+```
+
 ---
 
 ## 🚀 Usage
@@ -204,4 +212,3 @@ pocketbase/pb_data/
 - Rate limits apply — avoid running many searches in rapid succession
 - Cookie sessions expire periodically — re-export from browser when they do
 - VADER is English-only — non-English tweets are flagged but scores are unreliable
-

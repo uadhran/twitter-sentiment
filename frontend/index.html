@@ -119,8 +119,11 @@
     }
     .analyze-btn:hover { background: var(--accent); }
     .analyze-btn:disabled { background: var(--rule); color: var(--ink3); cursor: not-allowed; }
-    .search-note { margin-top: 9px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--ink3); }
+    .search-note { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--ink3); }
     .search-note a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted; }
+    .search-controls { display: flex; align-items: center; gap: 18px; margin-top: 10px; flex-wrap: wrap; }
+    .auto-refresh { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--ink2); display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+    .auto-refresh input { accent-color: var(--accent); }
 
     /* ── STATUS / ERROR ── */
     .status-line { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--ink3); min-height: 20px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
@@ -293,7 +296,13 @@
         </select>
         <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">Analyze →</button>
       </div>
-      <p class="search-note">Backend on <code>localhost:5000</code> · <a href="https://github.com/d60/twikit" target="_blank">twikit</a> · <a href="https://pocketbase.io" target="_blank">PocketBase</a></p>
+      <div class="search-controls">
+        <label class="auto-refresh">
+          <input type="checkbox" id="autoRefresh">
+          Auto-refresh every 60s (safe)
+        </label>
+        <span class="search-note">Backend on <code>localhost:5000</code> · <a href="https://github.com/d60/twikit" target="_blank">twikit</a> · <a href="https://pocketbase.io" target="_blank">PocketBase</a></span>
+      </div>
     </div>
 
     <div class="status-line" id="statusLine"></div>
@@ -322,9 +331,13 @@
 </div>
 
 <script>
-  const API = 'http://localhost:5000';
+  const API = document.body.dataset.apiBase ||
+    (location.protocol === 'file:' ? 'http://localhost:5000' : location.origin);
   const SENTIMENT_CLASSES = new Set(['positive', 'negative', 'neutral']);
   let allTweets = [], activeFilter = 'all';
+  const AUTO_REFRESH_MS = 60000;
+  let refreshTimer = null;
+  let isLoading = false;
 
   // Edition date
   document.getElementById('editionDate').textContent =
@@ -344,6 +357,7 @@
       }
     } catch(_) {}
     loadHistory();
+    initAutoRefresh();
   });
 
   async function loadHistory() {
@@ -593,6 +607,7 @@
     const btn = document.getElementById('analyzeBtn');
     btn.disabled = on;
     btn.textContent = on ? 'Scanning…' : 'Analyze →';
+    isLoading = on;
   }
   function setStatus(msg) {
     const el = document.getElementById('statusLine');
@@ -615,6 +630,34 @@
   }
   function clearError() { document.getElementById('errorBar').textContent = ''; }
   document.getElementById('keyword').addEventListener('keydown', e => { if (e.key === 'Enter') analyze(); });
+
+  function initAutoRefresh() {
+    const toggle = document.getElementById('autoRefresh');
+    toggle.addEventListener('change', () => {
+      if (toggle.checked) startAutoRefresh();
+      else stopAutoRefresh();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) stopAutoRefresh();
+      else if (toggle.checked) startAutoRefresh();
+    });
+  }
+
+  function startAutoRefresh() {
+    stopAutoRefresh();
+    refreshTimer = setInterval(() => {
+      if (document.hidden) return;
+      if (isLoading) return;
+      const keyword = document.getElementById('keyword').value.trim();
+      if (!keyword) return;
+      analyze();
+    }, AUTO_REFRESH_MS);
+  }
+
+  function stopAutoRefresh() {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
 </script>
 </body>
 </html>

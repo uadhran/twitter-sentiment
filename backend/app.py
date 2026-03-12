@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import time
+from threading import Thread
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from typing import Any
@@ -27,6 +28,8 @@ DEFAULT_TWEET_COUNT = 20
 MAX_TWEET_COUNT = 40
 DEFAULT_HISTORY_LIMIT = 20
 MAX_HISTORY_LIMIT = 100
+MIN_KEYWORD_LEN = 1
+MAX_KEYWORD_LEN = 80
 VADER_POS_THRESHOLD = 0.05
 VADER_NEG_THRESHOLD = -0.05
 PB_AUTH_TIMEOUT_SECONDS = 5
@@ -35,13 +38,19 @@ PB_WRITE_TIMEOUT_SECONDS = 10
 PB_TWEET_BATCH_SIZE = 10
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_REQUESTS = 30
+CACHE_TTL_SECONDS = 30
+MAX_CACHE_ENTRIES = 200
+MIN_REFRESH_SECONDS = 45
 
 app = Flask(__name__)
 
 
 def get_cors_origins() -> list[str]:
-    raw = os.getenv("CORS_ORIGINS", "http://localhost,http://127.0.0.1,null")
-    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    raw = os.getenv("CORS_ORIGINS", "http://localhost,http://127.0.0.1")
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if os.getenv("ALLOW_FILE_ORIGIN", "false").lower() == "true":
+        origins.append("null")
+    return origins
 
 
 CORS(app, resources={r"/api/*": {"origins": get_cors_origins()}})
@@ -50,6 +59,8 @@ analyzer = SentimentIntensityAnalyzer()
 twitter_client = Client("en-US")
 _logged_in = False
 _request_times: dict[str, deque[float]] = defaultdict(deque)
+_analysis_cache: dict[tuple[str, int], tuple[float, dict]] = {}
+_last_query: dict[tuple[str, str], float] = {}
 
 PB_URL = os.getenv("POCKETBASE_URL", "http://127.0.0.1:8090")
 PB_EMAIL = os.getenv("POCKETBASE_EMAIL", "")
@@ -81,20 +92,36 @@ def pb_token() -> str | None:
     return None
 
 
-def pb_save(summary: dict[str, Any], tweets: list[dict[str, Any]]) -> None:
-    """Save analysis + tweets to PocketBase (best-effort, non-blocking)."""
+def pb_request(method: str, url: str, **kwargs) -> httpx.Response | None:
+    """Make an authenticated PocketBase request, retrying once on 401."""
+    global _pb_token
     token = pb_token()
     if not token:
+        return None
+    headers = kwargs.pop("headers", {})
+    headers["Authorization"] = token
+    r = httpx.request(method, url, headers=headers, **kwargs)
+    if r.status_code == 401:
+        _pb_token = None
+        token = pb_token()
+        if not token:
+            return r
+        headers["Authorization"] = token
+        r = httpx.request(method, url, headers=headers, **kwargs)
+    return r
+
+
+def pb_save(summary: dict[str, Any], tweets: list[dict[str, Any]]) -> None:
+    """Save analysis + tweets to PocketBase (best-effort, non-blocking)."""
+    if not pb_token():
         logger.info("[pocketbase] Skipping save: no token (PocketBase not configured)")
         return
 
-    headers = {"Authorization": token}
-
     try:
         # 1. Save analysis summary
-        r = httpx.post(
+        r = pb_request(
+            "POST",
             f"{PB_URL}/api/collections/analyses/records",
-            headers=headers,
             json={
                 "keyword": summary["keyword"],
                 "total": summary["total"],
@@ -110,7 +137,7 @@ def pb_save(summary: dict[str, Any], tweets: list[dict[str, Any]]) -> None:
             },
             timeout=PB_WRITE_TIMEOUT_SECONDS,
         )
-        if r.status_code not in (200, 201):
+        if not r or r.status_code not in (200, 201):
             logger.warning("[pocketbase] Failed to save analysis: %s", r.text)
             return
 
@@ -121,9 +148,9 @@ def pb_save(summary: dict[str, Any], tweets: list[dict[str, Any]]) -> None:
         for i in range(0, len(tweets), PB_TWEET_BATCH_SIZE):
             batch = tweets[i : i + PB_TWEET_BATCH_SIZE]
             for t in batch:
-                httpx.post(
+                pb_request(
+                    "POST",
                     f"{PB_URL}/api/collections/tweets/records",
-                    headers=headers,
                     json={
                         "analysis": analysis_id,
                         "tweet_id": t["id"],
@@ -144,17 +171,16 @@ def pb_save(summary: dict[str, Any], tweets: list[dict[str, Any]]) -> None:
 
 def pb_history(limit: int = 20) -> list:
     """Fetch recent analyses from PocketBase."""
-    token = pb_token()
-    if not token:
+    if not pb_token():
         return []
     try:
-        r = httpx.get(
+        r = pb_request(
+            "GET",
             f"{PB_URL}/api/collections/analyses/records",
-            headers={"Authorization": token},
             params={"sort": "-analyzed_at", "perPage": limit},
             timeout=PB_READ_TIMEOUT_SECONDS,
         )
-        if r.status_code == 200:
+        if r and r.status_code == 200:
             return r.json().get("items", [])
     except Exception as e:
         logger.warning("[pocketbase] History fetch error: %s", e)
@@ -205,6 +231,8 @@ def clean_tweet(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+
+
 def classify(compound: float) -> str:
     if compound >= VADER_POS_THRESHOLD:
         return "positive"
@@ -232,6 +260,37 @@ def is_rate_limited(client_key: str) -> bool:
         return True
     bucket.append(now)
     return False
+
+
+def is_refresh_too_soon(client_key: str, keyword: str) -> bool:
+    """Throttle repeat requests for the same keyword per client."""
+    now = time.time()
+    key = (client_key, keyword.lower())
+    last = _last_query.get(key)
+    if last and now - last < MIN_REFRESH_SECONDS:
+        return True
+    _last_query[key] = now
+    return False
+
+
+def get_cached(keyword: str, count: int) -> dict | None:
+    key = (keyword.lower(), count)
+    cached = _analysis_cache.get(key)
+    if not cached:
+        return None
+    ts, payload = cached
+    if time.time() - ts > CACHE_TTL_SECONDS:
+        _analysis_cache.pop(key, None)
+        return None
+    return payload
+
+
+def set_cached(keyword: str, count: int, payload: dict) -> None:
+    if len(_analysis_cache) >= MAX_CACHE_ENTRIES:
+        # Drop oldest entry (simple, not strict LRU)
+        oldest_key = min(_analysis_cache.items(), key=lambda kv: kv[1][0])[0]
+        _analysis_cache.pop(oldest_key, None)
+    _analysis_cache[(keyword.lower(), count)] = (time.time(), payload)
 
 
 async def fetch_and_analyze(keyword: str, count: int) -> dict:
@@ -303,12 +362,19 @@ def analyze():
 
     if not keyword:
         return jsonify({"error": "Keyword is required"}), 400
+    if not (MIN_KEYWORD_LEN <= len(keyword) <= MAX_KEYWORD_LEN):
+        return jsonify({"error": f"Keyword length must be {MIN_KEYWORD_LEN}-{MAX_KEYWORD_LEN} characters"}), 400
 
     client_key = (request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")).split(",")[0].strip()
     if is_rate_limited(client_key):
         return jsonify({"error": "Too many requests. Please retry shortly."}), 429
+    if is_refresh_too_soon(client_key, keyword):
+        return jsonify({"error": f"Please wait {MIN_REFRESH_SECONDS}s before refreshing this keyword."}), 429
 
     try:
+        cached = get_cached(keyword, count)
+        if cached:
+            return jsonify(cached)
         result = asyncio.run(fetch_and_analyze(keyword, count))
     except ValueError as e:
         return jsonify({"error": str(e)}), 500
@@ -317,8 +383,9 @@ def analyze():
     if not result["tweets"]:
         return jsonify({"error": "No tweets found for this keyword."}), 404
 
+    set_cached(keyword, count, result)
     # Save to PocketBase async (fire and forget)
-    pb_save(result["summary"], result["tweets"])
+    Thread(target=pb_save, args=(result["summary"], result["tweets"]), daemon=True).start()
 
     return jsonify(result)
 
