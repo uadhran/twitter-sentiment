@@ -1,663 +1,773 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta http-equiv="X-Frame-Options" content="DENY"/>
   <title>PulseCheck — Twitter Sentiment</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     :root {
-      --ink:     #1a1410;
-      --ink2:    #3d3530;
-      --ink3:    #7a6e68;
-      --paper:   #f5f0e8;
-      --paper2:  #ede8de;
-      --paper3:  #e4ddd0;
-      --rule:    #d4cdc0;
-      --pos:     #1a6b3c;
-      --pos-bg:  #e8f5ee;
-      --neg:     #8b1a1a;
-      --neg-bg:  #faeaea;
-      --neu:     #5c4a00;
-      --neu-bg:  #fdf6e0;
-      --accent:  #c0392b;
+      --bg:       #09080B;
+      --surf:     #100F14;
+      --surf2:    #1A1820;
+      --bord:     #2E2B38;
+      --bord2:    #3D3A4A;
+      --text:     #EAE6F2;
+      --text2:    #B4ACCA;
+      --muted:    #68627A;
+      --pos:      #22C55E;
+      --pos-bg:   rgba(34,197,94,0.10);
+      --pos-bord: rgba(34,197,94,0.30);
+      --neg:      #EF4444;
+      --neg-bg:   rgba(239,68,68,0.10);
+      --neg-bord: rgba(239,68,68,0.30);
+      --neu:      #F59E0B;
+      --neu-bg:   rgba(245,158,11,0.10);
+      --neu-bord: rgba(245,158,11,0.30);
+      --acc:      #A78BFA;
+      --acc2:     #7C3AED;
     }
+    [data-theme="light"] {
+      --bg:       #F2EFF8;
+      --surf:     #FFFFFF;
+      --surf2:    #EAE5F5;
+      --bord:     #D4CDE8;
+      --bord2:    #C0B8D8;
+      --text:     #18142A;
+      --text2:    #3C3554;
+      --muted:    #7A7090;
+      --pos:      #16A34A;
+      --pos-bg:   rgba(22,163,74,0.08);
+      --pos-bord: rgba(22,163,74,0.35);
+      --neg:      #DC2626;
+      --neg-bg:   rgba(220,38,38,0.08);
+      --neg-bord: rgba(220,38,38,0.35);
+      --neu:      #D97706;
+      --neu-bg:   rgba(217,119,6,0.08);
+      --neu-bord: rgba(217,119,6,0.35);
+      --acc:      #7C3AED;
+      --acc2:     #A78BFA;
+    }
+
     html { scroll-behavior: smooth; }
     body {
-      background: var(--paper);
-      color: var(--ink);
-      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
       font-weight: 300;
+      line-height: 1.6;
       min-height: 100vh;
     }
     body::before {
       content: '';
-      position: fixed; inset: 0;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
-      pointer-events: none; z-index: 0;
-    }
-    body::after {
-      content: '';
-      position: fixed; inset: 0;
-      background-image: repeating-linear-gradient(transparent, transparent 27px, var(--rule) 27px, var(--rule) 28px);
-      opacity: 0.25;
-      pointer-events: none; z-index: 0;
+      position: fixed; inset: 0; z-index: 0;
+      background-image:
+        linear-gradient(var(--bord) 1px, transparent 1px),
+        linear-gradient(90deg, var(--bord) 1px, transparent 1px);
+      background-size: 44px 44px;
+      opacity: 0.3;
+      pointer-events: none;
     }
     * { position: relative; z-index: 1; }
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--bord2); border-radius: 3px; }
 
-    /* ── MASTHEAD ── */
-    .masthead {
-      border-bottom: 3px double var(--ink);
-      padding: 0 48px;
+    /* ── HEADER ── */
+    .hdr {
+      border-bottom: 1px solid var(--bord);
+      padding: 0 40px;
+      position: sticky; top: 0; z-index: 100;
+      background: var(--bg);
     }
-    .masthead-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 0 12px;
-      border-bottom: 1px solid var(--rule);
+    .hdr-main {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 0 14px; gap: 20px;
     }
-    .edition { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 2px; color: var(--ink3); text-transform: uppercase; }
-    .masthead-title { font-family: 'Playfair Display', serif; font-size: clamp(40px, 5.5vw, 68px); font-weight: 900; letter-spacing: -2px; line-height: 1; text-align: center; }
-    .masthead-title em { color: var(--accent); font-style: italic; }
-    .masthead-sub { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 2px; color: var(--ink3); text-transform: uppercase; text-align: right; }
-    .masthead-tagline {
-      text-align: center; padding: 10px 0; font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: var(--ink3);
-      display: flex; align-items: center; justify-content: center; gap: 16px;
+    .brand {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(28px, 4vw, 50px);
+      font-weight: 700; line-height: 1; color: var(--text); text-decoration: none;
     }
-    .masthead-tagline::before, .masthead-tagline::after { content: '✦'; color: var(--accent); font-size: 8px; }
+    .brand em { font-style: italic; color: var(--acc); }
+    .hdr-right { display: flex; align-items: center; gap: 14px; }
+    .live-pill {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--pos); border: 1px solid var(--pos-bord);
+      padding: 3px 8px; border-radius: 2px; flex-shrink: 0;
+    }
+    .live-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: blink 1.4s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+    .hdr-date { font-size: 10px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; }
+    .theme-btn {
+      background: none; border: 1px solid var(--bord); border-radius: 50%;
+      width: 28px; height: 28px; cursor: pointer; color: var(--muted);
+      font-size: 13px; display: flex; align-items: center; justify-content: center;
+      transition: border-color .2s, color .2s; flex-shrink: 0;
+    }
+    .theme-btn:hover { border-color: var(--bord2); color: var(--text); }
+    .hdr-sub {
+      border-top: 1px solid var(--bord);
+      padding: 7px 0;
+      font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
+      color: var(--muted); text-align: center;
+    }
 
     /* ── LAYOUT ── */
-    .page-body {
+    .page {
       display: grid;
-      grid-template-columns: 1fr 260px;
-      gap: 0;
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 48px;
+      grid-template-columns: 1fr 256px;
+      max-width: 1240px; margin: 0 auto; padding: 0 40px;
       align-items: start;
     }
-    .main-col { padding-right: 40px; border-right: 1px solid var(--rule); }
-    .side-col { padding-left: 28px; }
+    .main { padding: 32px 36px 32px 0; border-right: 1px solid var(--bord); }
+    .aside { padding: 32px 0 32px 32px; }
 
     /* ── SEARCH ── */
-    .search-wrap { padding-top: 40px; margin-bottom: 32px; }
+    .search-section { margin-bottom: 32px; }
     .search-kicker {
-      font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
-      color: var(--accent); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+      font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
+      color: var(--acc); margin-bottom: 10px;
+      display: flex; align-items: center; gap: 10px;
     }
-    .search-kicker::after { content: ''; flex: 1; height: 1px; background: var(--rule); }
-    .search-headline { font-family: 'Playfair Display', serif; font-size: clamp(24px, 3.5vw, 36px); font-weight: 700; line-height: 1.1; margin-bottom: 20px; }
-    .search-headline em { font-style: italic; color: var(--ink3); }
-    .search-form {
-      display: flex; border: 2px solid var(--ink); background: white;
-      border-radius: 2px; overflow: hidden; box-shadow: 4px 4px 0 var(--ink);
-      transition: box-shadow 0.15s;
+    .search-kicker::after { content: ''; flex: 1; height: 1px; background: var(--bord); }
+    .search-headline {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(20px, 2.8vw, 32px);
+      font-weight: 300; line-height: 1.2; color: var(--text2); margin-bottom: 18px;
     }
-    .search-form:focus-within { box-shadow: 5px 5px 0 var(--accent); }
-    .search-at {
-      padding: 0 14px; font-family: 'Playfair Display', serif; font-size: 20px;
-      font-style: italic; color: var(--ink3); background: var(--paper2);
-      border-right: 2px solid var(--rule); display: flex; align-items: center;
+    .search-headline strong { font-weight: 700; color: var(--text); font-style: italic; }
+    .search-box {
+      display: flex; background: var(--surf);
+      border: 1px solid var(--bord); border-radius: 2px; overflow: hidden;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .search-box:focus-within { border-color: var(--acc); box-shadow: 0 0 0 3px rgba(167,139,250,.1); }
+    .search-hash {
+      padding: 0 14px; background: var(--surf2); border-right: 1px solid var(--bord);
+      display: flex; align-items: center; flex-shrink: 0;
+      font-family: 'Cormorant Garamond', serif; font-size: 22px;
+      font-style: italic; color: var(--muted);
     }
     #keyword {
-      flex: 1; padding: 15px 18px; font-family: 'DM Sans', sans-serif;
-      font-size: 16px; color: var(--ink); background: transparent; border: none; outline: none;
+      flex: 1; padding: 14px 16px; font-family: 'JetBrains Mono', monospace;
+      font-size: 13px; font-weight: 300; color: var(--text);
+      background: transparent; border: none; outline: none; min-width: 0;
     }
-    #keyword::placeholder { color: var(--ink3); opacity: 0.6; }
-    .count-pick {
-      padding: 0 12px; font-family: 'DM Mono', monospace; font-size: 11px;
-      color: var(--ink2); background: var(--paper2); border: none;
-      border-left: 2px solid var(--rule); cursor: pointer; outline: none;
+    #keyword::placeholder { color: var(--muted); }
+    .count-sel {
+      padding: 0 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      color: var(--text2); background: var(--surf2);
+      border: none; border-left: 1px solid var(--bord);
+      cursor: pointer; outline: none; flex-shrink: 0;
     }
     .analyze-btn {
-      padding: 0 28px; background: var(--ink); color: var(--paper); border: none;
-      font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 2px;
-      text-transform: uppercase; cursor: pointer; transition: background 0.15s; white-space: nowrap;
+      padding: 0 22px; background: var(--acc); color: #fff; border: none;
+      font-family: 'JetBrains Mono', monospace; font-size: 10px;
+      letter-spacing: 2px; text-transform: uppercase; cursor: pointer;
+      transition: background .15s, opacity .15s; white-space: nowrap; flex-shrink: 0;
     }
-    .analyze-btn:hover { background: var(--accent); }
-    .analyze-btn:disabled { background: var(--rule); color: var(--ink3); cursor: not-allowed; }
-    .search-note { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--ink3); }
-    .search-note a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted; }
-    .search-controls { display: flex; align-items: center; gap: 18px; margin-top: 10px; flex-wrap: wrap; }
-    .auto-refresh { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--ink2); display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
-    .auto-refresh input { accent-color: var(--accent); }
+    .analyze-btn:hover:not(:disabled) { background: var(--acc2); }
+    .analyze-btn:disabled { opacity: .45; cursor: not-allowed; }
+    .search-foot {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 10px; flex-wrap: wrap; gap: 8px;
+    }
+    .ar-label { display: flex; align-items: center; gap: 7px; font-size: 10px; color: var(--muted); cursor: pointer; }
+    .ar-label input { accent-color: var(--acc); }
+    .powered { font-size: 10px; color: var(--muted); }
 
     /* ── STATUS / ERROR ── */
-    .status-line { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--ink3); min-height: 20px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite; flex-shrink: 0; }
-    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
-    .error-inner { background: var(--neg-bg); border: 1px solid var(--neg); border-left: 4px solid var(--neg); padding: 10px 16px; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--neg); margin-bottom: 16px; }
+    .status-row { min-height: 22px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--acc); animation: blink 1s ease-in-out infinite; flex-shrink: 0; }
+    .err-box { background: var(--neg-bg); border: 1px solid var(--neg-bord); border-left: 3px solid var(--neg); padding: 9px 14px; border-radius: 2px; font-size: 11px; color: var(--neg); margin-bottom: 16px; }
 
-    /* ── SECTION RULE ── */
-    .section-rule { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; margin-top: 8px; }
-    .section-rule-label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--ink3); white-space: nowrap; }
-    .section-rule-line { flex: 1; height: 1px; background: var(--ink); }
+    /* ── SECTION HEAD ── */
+    .sec-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .sec-lbl { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+    .sec-line { flex: 1; height: 1px; background: var(--bord); }
 
     /* ── VERDICT ── */
     .verdict {
-      border: 2px solid var(--ink); padding: 24px 28px; margin-bottom: 24px;
-      background: white; box-shadow: 4px 4px 0 var(--ink2);
-      display: grid;
-      grid-template-columns: auto 1fr;
-      grid-template-rows: auto auto;
-      gap: 20px 32px;
-      align-items: start;
+      border: 1px solid var(--bord); border-radius: 2px; padding: 22px 24px;
+      margin-bottom: 20px; background: var(--surf);
+      transition: border-color .5s, box-shadow .5s;
     }
-    .verdict-main { grid-column: 1; grid-row: 1 / 3; }
-    .verdict-eyebrow { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--ink3); margin-bottom: 6px; }
-    .verdict-word { font-family: 'Playfair Display', serif; font-size: clamp(36px, 5vw, 60px); font-weight: 900; line-height: 1; letter-spacing: -1px; }
+    .verdict.positive { border-color: var(--pos-bord); box-shadow: 0 0 40px var(--pos-bg); }
+    .verdict.negative { border-color: var(--neg-bord); box-shadow: 0 0 40px var(--neg-bg); }
+    .verdict.neutral  { border-color: var(--neu-bord); box-shadow: 0 0 40px var(--neu-bg); }
+    .verdict-eye { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+    .verdict-grid { display: grid; grid-template-columns: 1fr auto; gap: 16px 24px; align-items: center; }
+    .verdict-word {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(40px, 5.5vw, 68px);
+      font-weight: 700; font-style: italic; line-height: 1; letter-spacing: -.5px;
+      transition: color .4s;
+    }
     .verdict-word.positive { color: var(--pos); }
     .verdict-word.negative { color: var(--neg); }
     .verdict-word.neutral  { color: var(--neu); }
-    .verdict-compound { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--ink3); margin-top: 6px; }
-    .verdict-stats { grid-column: 2; grid-row: 1; display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-end; }
-    .v-stat-num { font-family: 'Playfair Display', serif; font-size: 32px; font-weight: 700; line-height: 1; }
-    .v-stat-num.tot { color: var(--ink); }
-    .v-stat-num.pos { color: var(--pos); }
-    .v-stat-num.neg { color: var(--neg); }
-    .v-stat-num.neu { color: var(--neu); }
-    .v-stat-label { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink3); margin-top: 3px; }
+    .verdict-sub { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .verdict-stats {
+      display: flex; gap: 16px; flex-wrap: wrap;
+      padding-top: 14px; margin-top: 14px;
+      border-top: 1px solid var(--bord);
+    }
+    .vs-num {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 26px; font-weight: 700; line-height: 1;
+    }
+    .vs-num.tot { color: var(--text); }
+    .vs-num.pos { color: var(--pos); }
+    .vs-num.neg { color: var(--neg); }
+    .vs-num.neu { color: var(--neu); }
+    .vs-lbl { font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+
+    /* ── GAUGE ── */
+    .gauge-wrap { flex-shrink: 0; }
 
     /* ── DIST BAR ── */
-    .dist-bar-wrap { margin-bottom: 36px; }
-    .dist-bar { height: 8px; display: flex; border-radius: 1px; overflow: hidden; margin-bottom: 12px; border: 1px solid var(--rule); }
-    .db-pos { background: var(--pos); transition: width 1s cubic-bezier(0.4,0,0.2,1); }
-    .db-neg { background: var(--neg); transition: width 1s cubic-bezier(0.4,0,0.2,1) 0.1s; }
-    .db-neu { background: #c9a84c; transition: width 1s cubic-bezier(0.4,0,0.2,1) 0.2s; }
-    .dist-legend { display: flex; gap: 20px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; flex-wrap: wrap; }
-    .dl-item { display: flex; align-items: center; gap: 6px; color: var(--ink3); }
-    .dl-swatch { width: 10px; height: 10px; border-radius: 1px; flex-shrink: 0; }
+    .dist-wrap { margin-bottom: 28px; }
+    .dist-bar { height: 10px; display: flex; overflow: hidden; border-radius: 2px; background: var(--surf2); margin-bottom: 10px; }
+    .dp { background: var(--pos); transition: width 1.2s cubic-bezier(.4,0,.2,1); }
+    .dn { background: var(--neg); transition: width 1.2s cubic-bezier(.4,0,.2,1) .1s; }
+    .dne { background: var(--neu); transition: width 1.2s cubic-bezier(.4,0,.2,1) .2s; }
+    .dist-legend { display: flex; gap: 16px; flex-wrap: wrap; }
+    .dl { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--muted); }
+    .dl-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 
-    /* ── TWEET TABLE ── */
-    .tweet-controls { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
-    .tweet-count-label { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 700; font-style: italic; color: var(--ink2); }
-    .filter-group { display: flex; gap: 0; border: 1px solid var(--rule); border-radius: 2px; overflow: hidden; }
-    .filter-btn {
-      padding: 6px 13px; font-family: 'DM Mono', monospace; font-size: 9px;
-      letter-spacing: 1.5px; text-transform: uppercase; background: var(--paper);
-      color: var(--ink3); border: none; border-right: 1px solid var(--rule);
-      cursor: pointer; transition: all 0.12s;
+    /* ── TWEET CONTROLS ── */
+    .tweet-ctrl { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+    .tweet-ct { font-family: 'Cormorant Garamond', serif; font-size: 18px; font-weight: 400; font-style: italic; color: var(--text2); }
+    .filter-row { display: flex; border: 1px solid var(--bord); border-radius: 2px; overflow: hidden; }
+    .fb {
+      padding: 5px 10px; font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+      background: var(--surf); color: var(--muted); border: none;
+      border-right: 1px solid var(--bord); cursor: pointer;
+      transition: all .12s; display: flex; align-items: center; gap: 5px;
     }
-    .filter-btn:last-child { border-right: none; }
-    .filter-btn:hover { background: var(--paper2); color: var(--ink); }
-    .filter-btn.active { background: var(--ink); color: var(--paper); }
+    .fb:last-child { border-right: none; }
+    .fb:hover { background: var(--surf2); color: var(--text); }
+    .fb.on { background: var(--acc); color: #fff; }
+    .fb-badge { font-size: 8px; padding: 1px 5px; border-radius: 8px; background: var(--surf2); color: var(--muted); line-height: 1.4; }
+    .fb.on .fb-badge { background: rgba(255,255,255,.22); color: #fff; }
 
-    .tweet-table { width: 100%; border-collapse: collapse; border: 2px solid var(--ink); font-size: 13px; }
-    .tweet-table thead tr { background: var(--ink); color: var(--paper); }
-    .tweet-table thead th { padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; text-align: left; font-weight: 500; }
-    .tweet-table tbody tr { border-bottom: 1px solid var(--rule); transition: background 0.1s; animation: rowIn 0.25s ease both; }
-    @keyframes rowIn { from { opacity:0; transform: translateX(-4px); } to { opacity:1; transform:none; } }
-    .tweet-table tbody tr:hover { background: var(--paper2); }
-    .tweet-table tbody tr:last-child { border-bottom: none; }
-    .tweet-table td { padding: 12px 14px; vertical-align: top; }
+    /* ── TABLE ── */
+    .tw-table { width: 100%; border-collapse: collapse; border: 1px solid var(--bord); font-size: 12px; }
+    .tw-table thead tr { background: var(--surf2); }
+    .tw-table th { padding: 9px 12px; font-size: 8px; letter-spacing: 2px; text-transform: uppercase; text-align: left; font-weight: 500; color: var(--muted); border-bottom: 1px solid var(--bord); }
+    .tw-table tbody tr { border-bottom: 1px solid var(--bord); transition: background .1s; animation: rowIn .22s ease both; }
+    @keyframes rowIn { from{opacity:0;transform:translateX(-5px)} to{opacity:1;transform:none} }
+    .tw-table tbody tr:hover { background: var(--surf2); }
+    .tw-table tbody tr:last-child { border-bottom: none; }
+    .tw-table td { padding: 11px 12px; vertical-align: top; }
+    .tag { display: inline-block; padding: 2px 6px; font-size: 8px; letter-spacing: 1px; text-transform: uppercase; border-radius: 2px; font-weight: 500; white-space: nowrap; }
+    .tag-positive { background: var(--pos-bg); color: var(--pos); border: 1px solid var(--pos-bord); }
+    .tag-negative { background: var(--neg-bg); color: var(--neg); border: 1px solid var(--neg-bord); }
+    .tag-neutral  { background: var(--neu-bg); color: var(--neu); border: 1px solid var(--neu-bord); }
+    .tw-text { color: var(--text2); line-height: 1.6; }
+    .tw-foot { display: flex; align-items: center; gap: 8px; margin-top: 5px; flex-wrap: wrap; }
+    .tw-link { font-size: 10px; color: var(--acc); text-decoration: none; border-bottom: 1px dotted var(--acc); transition: opacity .15s; display: inline-flex; align-items: center; gap: 3px; }
+    .tw-link:hover { opacity: .6; }
+    .ne-badge { font-size: 8px; padding: 1px 5px; border-radius: 2px; text-transform: uppercase; background: var(--surf2); color: var(--muted); border: 1px solid var(--bord); }
+    .meta-cell { font-size: 10px; color: var(--muted); white-space: nowrap; }
+    .meta-h { color: var(--neg); }
+    .sc-cell { font-size: 12px; font-weight: 400; white-space: nowrap; text-align: right; }
+    .sc-pos { color: var(--pos); }
+    .sc-neg { color: var(--neg); }
+    .sc-neu { color: var(--neu); }
+    tr.dimmed td { opacity: .65; }
 
-    .tag { display: inline-block; padding: 2px 7px; font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; border-radius: 1px; font-weight: 500; white-space: nowrap; }
-    .tag-positive { background: var(--pos-bg); color: var(--pos); border: 1px solid var(--pos); }
-    .tag-negative { background: var(--neg-bg); color: var(--neg); border: 1px solid var(--neg); }
-    .tag-neutral  { background: var(--neu-bg); color: var(--neu); border: 1px solid #c9a84c; }
+    /* ── SKELETON ── */
+    .sk-wrap { animation: fadeUp .25s ease; }
+    .sk-card { border: 1px solid var(--bord); border-radius: 2px; padding: 22px 24px; background: var(--surf); margin-bottom: 18px; }
+    .sk { height: 12px; border-radius: 2px; margin-bottom: 12px; background: linear-gradient(90deg, var(--surf2) 0%, var(--surf) 50%, var(--surf2) 100%); background-size: 300% 100%; animation: shimmer 1.8s ease-in-out infinite; }
+    @keyframes shimmer { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
 
-    .tweet-text-cell { color: var(--ink2); line-height: 1.6; }
-    .tweet-footer { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
-    .tweet-time {
-      font-family: 'DM Mono', monospace; font-size: 10px; color: var(--accent);
-      text-decoration: none; border-bottom: 1px dotted var(--accent);
-      transition: opacity 0.15s; display: inline-flex; align-items: center; gap: 4px;
-    }
-    .tweet-time:hover { opacity: 0.65; }
-    .non-english-badge {
-      font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px;
-      padding: 1px 6px; border-radius: 2px; text-transform: uppercase;
-      background: #f0f0f0; color: var(--ink3); border: 1px solid var(--rule);
-    }
-    .tweet-meta-cell { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--ink3); white-space: nowrap; }
-    .tweet-meta-cell .likes { color: var(--neg); }
-    .score-cell { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; white-space: nowrap; text-align: right; }
-    .score-pos { color: var(--pos); }
-    .score-neg { color: var(--neg); }
-    .score-neu { color: var(--neu); }
-    tr.non-english-row td { opacity: 0.75; }
-
-    /* ── EMPTY STATE ── */
-    .empty-state { padding: 80px 0; text-align: center; }
-    .empty-drop { font-family: 'Playfair Display', serif; font-size: 88px; font-weight: 900; font-style: italic; color: var(--paper3); line-height: 1; margin-bottom: 16px; }
-    .empty-text { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink3); }
+    /* ── EMPTY ── */
+    .empty { padding: 80px 0; text-align: center; }
+    .empty-g { font-family: 'Cormorant Garamond', serif; font-size: 88px; font-weight: 300; font-style: italic; color: var(--bord); line-height: 1; margin-bottom: 14px; }
+    .empty-t { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); }
+    .empty-h { font-size: 11px; color: var(--bord2); margin-top: 10px; }
 
     /* ── SIDEBAR ── */
-    .side-col { padding-top: 40px; }
-    .sidebar-section { margin-bottom: 32px; }
-    .sidebar-heading {
-      font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 3px;
-      text-transform: uppercase; color: var(--ink3); padding-bottom: 8px;
-      border-bottom: 2px solid var(--ink); margin-bottom: 12px;
-    }
-    .history-item {
-      padding: 10px 0; border-bottom: 1px solid var(--rule); cursor: pointer;
-      transition: padding-left 0.15s;
-    }
-    .history-item:hover { padding-left: 4px; }
-    .history-item:last-child { border-bottom: none; }
-    .history-keyword { font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 700; color: var(--ink); }
-    .history-verdict { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; margin-top: 3px; }
-    .history-verdict.positive { color: var(--pos); }
-    .history-verdict.negative { color: var(--neg); }
-    .history-verdict.neutral  { color: var(--neu); }
-    .history-meta { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--ink3); margin-top: 3px; }
-    .history-bar { height: 3px; display: flex; border-radius: 1px; overflow: hidden; margin-top: 6px; }
-    .hb-pos { background: var(--pos); }
-    .hb-neg { background: var(--neg); }
-    .hb-neu { background: #c9a84c; }
-    .history-empty { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--ink3); padding: 12px 0; line-height: 1.7; }
-    .pb-badge {
-      display: inline-flex; align-items: center; gap: 5px;
-      font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px;
-      text-transform: uppercase; padding: 4px 8px;
-      border: 1px solid var(--rule); border-radius: 2px; color: var(--ink3);
-      margin-bottom: 12px;
-    }
-    .pb-badge.connected { border-color: var(--pos); color: var(--pos); }
-    .pb-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .sb-sec { margin-bottom: 28px; }
+    .sb-head { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); padding-bottom: 8px; border-bottom: 1px solid var(--bord); margin-bottom: 12px; }
+    .pb-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 4px 8px; border: 1px solid var(--bord); border-radius: 2px; color: var(--muted); margin-bottom: 8px; }
+    .pb-badge.on { border-color: var(--pos-bord); color: var(--pos); }
+    .pb-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+    .hi { position: relative; padding: 10px 24px 10px 0; border-bottom: 1px solid var(--bord); cursor: pointer; transition: padding-left .14s; }
+    .hi:hover { padding-left: 4px; }
+    .hi:last-child { border-bottom: none; }
+    .hi-kw { font-family: 'Cormorant Garamond', serif; font-size: 15px; font-weight: 600; color: var(--text); }
+    .hi-v { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
+    .hi-v.positive { color: var(--pos); }
+    .hi-v.negative { color: var(--neg); }
+    .hi-v.neutral  { color: var(--neu); }
+    .hi-meta { font-size: 9px; color: var(--muted); margin-top: 2px; }
+    .hi-bar { height: 2px; display: flex; border-radius: 1px; overflow: hidden; margin-top: 6px; }
+    .hb-p { background: var(--pos); }
+    .hb-n { background: var(--neg); }
+    .hb-e { background: var(--neu); }
+    .hi-empty { font-size: 10px; color: var(--muted); padding: 8px 0; line-height: 1.8; }
 
-    @media(max-width: 900px) {
-      .page-body { grid-template-columns: 1fr; padding: 0 20px; }
-      .main-col { padding-right: 0; border-right: none; }
-      .side-col { padding-left: 0; border-top: 1px solid var(--rule); padding-top: 24px; }
-      .masthead { padding: 0 20px; }
+    /* ── RECENT SEARCHES ── */
+    .recents { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; min-height: 0; }
+    .recent-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border: 1px solid var(--bord2); border-radius: 12px;
+      font-size: 10px; color: var(--text2); background: var(--surf2);
+      cursor: pointer; transition: border-color .15s, color .15s;
+    }
+    .recent-chip:hover { border-color: var(--acc); color: var(--acc); }
+    .recent-chip-x { color: var(--muted); font-size: 11px; line-height: 1; }
+    .recent-chip-x:hover { color: var(--neg); }
+
+    /* ── COOLDOWN ── */
+    .cooldown-bar {
+      height: 2px; background: var(--bord); border-radius: 1px; margin-top: 8px; overflow: hidden;
+    }
+    .cooldown-fill { height: 100%; background: var(--acc); transition: width .9s linear; }
+
+    /* ── CACHED PILL ── */
+    .cached-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+      padding: 2px 7px; border: 1px solid var(--bord2); border-radius: 10px;
+      color: var(--muted);
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 900px) {
+      .page { grid-template-columns: 1fr; padding: 0 20px; }
+      .main { padding-right: 0; border-right: none; border-bottom: 1px solid var(--bord); padding-bottom: 32px; }
+      .aside { padding-left: 0; }
+      .hdr { padding: 0 20px; }
+      .verdict-grid { grid-template-columns: 1fr; }
+      .gauge-wrap { display: none; }
+    }
+    @media (max-width: 540px) {
+      .tw-table td { padding: 9px 9px; }
     }
   </style>
 </head>
 <body>
 
-<header class="masthead">
-  <div class="masthead-top">
-    <span class="edition" id="editionDate"></span>
-    <h1 class="masthead-title">Pulse<em>Check</em></h1>
-    <span class="masthead-sub">Twitter · VADER NLP</span>
+<header class="hdr">
+  <div class="hdr-main">
+    <a class="brand" href="/">Pulse<em>Check</em></a>
+    <div class="hdr-right">
+      <div class="live-pill"><div class="live-dot"></div>Live</div>
+      <span class="hdr-date" id="hdrDate"></span>
+      <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle theme">◐</button>
+    </div>
   </div>
-  <div class="masthead-tagline">Real-time sentiment intelligence from the public conversation</div>
+  <div class="hdr-sub">Real-time sentiment intelligence · VADER NLP · Twitter / X</div>
 </header>
 
-<div class="page-body">
-  <!-- MAIN COLUMN -->
-  <div class="main-col">
-    <div class="search-wrap">
-      <div class="search-kicker">New Analysis</div>
-      <h2 class="search-headline">What is the world <em>saying right now?</em></h2>
-      <div class="search-form">
-        <span class="search-at">#</span>
-        <input type="text" id="keyword" placeholder="keyword, topic or phrase…" autocomplete="off"/>
-        <select class="count-pick" id="count">
-          <option value="10">10</option>
-          <option value="20" selected>20</option>
-          <option value="30">30</option>
-          <option value="40">40</option>
+<div class="page">
+  <main class="main">
+    <section class="search-section">
+      <div class="search-kicker">Analysis Target</div>
+      <h2 class="search-headline">What is the world <strong>saying right now?</strong></h2>
+      <div class="search-box">
+        <span class="search-hash">#</span>
+        <input id="keyword" type="text" placeholder="keyword, topic or phrase…" autocomplete="off" maxlength="80"/>
+        <select class="count-sel" id="count">
+          <option value="10">10 tweets</option>
+          <option value="20" selected>20 tweets</option>
+          <option value="30">30 tweets</option>
+          <option value="40">40 tweets</option>
         </select>
         <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">Analyze →</button>
       </div>
-      <div class="search-controls">
-        <label class="auto-refresh">
-          <input type="checkbox" id="autoRefresh">
-          Auto-refresh every 60s (safe)
-        </label>
-        <span class="search-note">Backend on <code>localhost:5000</code> · <a href="https://github.com/d60/twikit" target="_blank">twikit</a> · <a href="https://pocketbase.io" target="_blank">PocketBase</a></span>
+      <div class="search-foot">
+        <label class="ar-label"><input type="checkbox" id="autoRefresh"> Auto-refresh every 60s</label>
+        <span class="powered">twikit · VADER · PocketBase</span>
       </div>
-    </div>
+      <div class="recents" id="recents"></div>
+      <div class="cooldown-bar" id="cooldownBar" style="display:none">
+        <div class="cooldown-fill" id="cooldownFill" style="width:100%"></div>
+      </div>
+    </section>
 
-    <div class="status-line" id="statusLine"></div>
+    <div class="status-row" id="statusRow"></div>
     <div id="errorBar"></div>
     <div id="results">
-      <div class="empty-state">
-        <div class="empty-drop">S?</div>
-        <div class="empty-text">Enter a keyword to begin</div>
+      <div class="empty">
+        <div class="empty-g">?</div>
+        <div class="empty-t">Enter a keyword to begin</div>
+        <div class="empty-h">Try: bitcoin · climate · AI · Taylor Swift</div>
       </div>
     </div>
-  </div>
+  </main>
 
-  <!-- SIDEBAR -->
-  <div class="side-col">
-    <div class="sidebar-section">
-      <div class="sidebar-heading">System</div>
+  <aside class="aside">
+    <div class="sb-sec">
+      <div class="sb-head">System</div>
       <div class="pb-badge" id="pbBadge"><div class="pb-dot"></div>PocketBase</div>
     </div>
-    <div class="sidebar-section">
-      <div class="sidebar-heading">Recent Analyses</div>
-      <div id="historyList">
-        <div class="history-empty">Run your first analysis<br>to see history here.</div>
-      </div>
+    <div class="sb-sec">
+      <div class="sb-head">Recent Analyses</div>
+      <div id="historyList"><div class="hi-empty">Run your first analysis<br>to see history here.</div></div>
     </div>
-  </div>
+  </aside>
 </div>
 
 <script>
-  const API = document.body.dataset.apiBase ||
-    (location.protocol === 'file:' ? 'http://localhost:5000' : location.origin);
-  const SENTIMENT_CLASSES = new Set(['positive', 'negative', 'neutral']);
-  let allTweets = [], activeFilter = 'all';
-  const AUTO_REFRESH_MS = 60000;
-  let refreshTimer = null;
-  let isLoading = false;
+  const API = '';
+  const SENTS = new Set(['positive','negative','neutral']);
+  const MIN_REFRESH = 45; // must match backend MIN_REFRESH_SECONDS
+  let allTweets = [], activeFilter = 'all', isLoading = false, refreshTimer = null;
+  let cooldownTimer = null;
+  const lastSearch = {}; // keyword.lower -> timestamp (ms)
 
-  // Edition date
-  document.getElementById('editionDate').textContent =
+  // ── Theme ──
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    document.getElementById('themeBtn').textContent = t === 'dark' ? '○' : '◐';
+    localStorage.setItem('pc-theme', t);
+  }
+  function toggleTheme() {
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  }
+  (function() {
+    const s = localStorage.getItem('pc-theme');
+    applyTheme(s || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  })();
+
+  document.getElementById('hdrDate').textContent =
     new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
 
-  // Check health + load history on startup
+  // ── Init ──
   window.addEventListener('load', async () => {
     try {
-      const r = await fetch(`${API}/api/health`);
-      const d = await r.json();
-      const badge = document.getElementById('pbBadge');
-      if (d.pocketbase) {
-        badge.classList.add('connected');
-        setPocketBaseBadge(badge, 'PocketBase ✓');
-      } else {
-        setPocketBaseBadge(badge, 'PocketBase (offline)');
-      }
+      const d = await fetch(`${API}/api/health`).then(r => r.json());
+      const b = document.getElementById('pbBadge');
+      if (d.pocketbase) { b.classList.add('on'); setPBBadge(b, 'PocketBase ✓'); }
+      else setPBBadge(b, 'PocketBase (offline)');
     } catch(_) {}
+    renderRecents();
     loadHistory();
-    initAutoRefresh();
+    initAR();
   });
 
-  async function loadHistory() {
-    try {
-      const r = await fetch(`${API}/api/history?limit=10`);
-      const d = await r.json();
-      renderHistory(d.history || []);
-    } catch(_) {
-      renderHistory([]);
-    }
+  // ── Recent searches (sessionStorage) ──
+  function getRecents() {
+    try { return JSON.parse(sessionStorage.getItem('pc-recents') || '[]'); } catch(_) { return []; }
+  }
+  function addToRecent(kw) {
+    const list = getRecents().filter(k => k.toLowerCase() !== kw.toLowerCase());
+    list.unshift(kw);
+    sessionStorage.setItem('pc-recents', JSON.stringify(list.slice(0, 8)));
+    renderRecents();
+  }
+  function removeFromRecent(kw) {
+    sessionStorage.setItem('pc-recents', JSON.stringify(getRecents().filter(k => k.toLowerCase() !== kw.toLowerCase())));
+    renderRecents();
+  }
+  function renderRecents() {
+    const el = document.getElementById('recents');
+    const list = getRecents();
+    el.textContent = '';
+    list.forEach(kw => {
+      const chip = document.createElement('span');
+      chip.className = 'recent-chip';
+      chip.addEventListener('click', e => { if (e.target.classList.contains('recent-chip-x')) return; document.getElementById('keyword').value = kw; analyze(); });
+      const label = document.createTextNode(`#${kw}`);
+      const x = document.createElement('span');
+      x.className = 'recent-chip-x'; x.textContent = '×'; x.title = 'Remove';
+      x.addEventListener('click', e => { e.stopPropagation(); removeFromRecent(kw); });
+      chip.appendChild(label); chip.appendChild(x);
+      el.appendChild(chip);
+    });
   }
 
+  // ── Cooldown display ──
+  function getCooldownSecs(kw) {
+    const t = lastSearch[kw.toLowerCase()];
+    if (!t) return 0;
+    return Math.max(0, MIN_REFRESH - Math.round((Date.now() - t) / 1000));
+  }
+  function startCooldownUI(kw) {
+    if (cooldownTimer) clearInterval(cooldownTimer);
+    const bar = document.getElementById('cooldownBar');
+    const fill = document.getElementById('cooldownFill');
+    const btn = document.getElementById('analyzeBtn');
+    bar.style.display = 'block';
+    function tick() {
+      const rem = getCooldownSecs(kw);
+      if (rem <= 0) {
+        clearInterval(cooldownTimer); cooldownTimer = null;
+        bar.style.display = 'none';
+        fill.style.width = '100%';
+        if (!isLoading) { btn.disabled = false; btn.textContent = 'Analyze →'; }
+        return;
+      }
+      fill.style.width = `${(rem / MIN_REFRESH) * 100}%`;
+      btn.disabled = true;
+      btn.textContent = `Wait ${rem}s`;
+    }
+    tick();
+    cooldownTimer = setInterval(tick, 1000);
+  }
+
+  // ── History ──
+  async function loadHistory() {
+    try { renderHistory((await fetch(`${API}/api/history?limit=10`).then(r=>r.json())).history || []); }
+    catch(_) { renderHistory([]); }
+  }
   function renderHistory(items) {
     const el = document.getElementById('historyList');
-    if (!items.length) {
-      el.innerHTML = '<div class="history-empty">No saved analyses yet.<br>Requires PocketBase running.</div>';
-      return;
-    }
+    if (!items.length) { el.innerHTML = '<div class="hi-empty">No saved analyses yet.<br>Requires PocketBase.</div>'; return; }
     el.textContent = '';
     items.forEach(item => {
       const row = document.createElement('div');
-      row.className = 'history-item';
-      row.addEventListener('click', () => loadHistoryItem(item.keyword || ''));
+      row.className = 'hi';
 
-      const keyword = document.createElement('div');
-      keyword.className = 'history-keyword';
-      keyword.textContent = `#${item.keyword || ''}`;
+      const kw = document.createElement('div'); kw.className = 'hi-kw'; kw.textContent = `#${item.keyword||''}`;
+      const vd = document.createElement('div');
+      const vl = ss(item.overall_sentiment);
+      vd.className = `hi-v ${vl}`;
+      vd.textContent = `${vl} · ${(item.avg_compound||0)>0?'+':''}${item.avg_compound||0}`;
+      const meta = document.createElement('div'); meta.className = 'hi-meta';
+      meta.textContent = `${item.total||0} tweets · ${fmt(item.analyzed_at)}`;
+      const bar = document.createElement('div'); bar.className = 'hi-bar';
+      [['hb-p', item.positive_pct],['hb-n', item.negative_pct],['hb-e', item.neutral_pct]].forEach(([c,w]) => {
+        const s = document.createElement('div'); s.className = c; s.style.width = `${clamp(w)}%`; bar.appendChild(s);
+      });
 
-      const verdict = document.createElement('div');
-      const verdictLabel = safeSentiment(item.overall_sentiment);
-      verdict.className = `history-verdict ${verdictLabel}`;
-      verdict.textContent = `${verdictLabel} · ${(item.avg_compound || 0) > 0 ? '+' : ''}${item.avg_compound || 0}`;
+      // Delete button
+      const del = document.createElement('button');
+      del.textContent = '×'; del.title = 'Delete this analysis';
+      del.style.cssText = 'position:absolute;top:10px;right:0;background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:0 4px;line-height:1;z-index:1;';
+      del.addEventListener('mouseenter', () => del.style.color = 'var(--neg)');
+      del.addEventListener('mouseleave', () => del.style.color = 'var(--muted)');
+      del.addEventListener('click', async e => {
+        e.stopPropagation();
+        if (!item.id) return;
+        del.textContent = '…'; del.disabled = true;
+        try {
+          const r = await fetch(`${API}/api/history/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+          if (r.ok) { row.style.opacity = '0'; row.style.transition = 'opacity .2s'; setTimeout(() => row.remove(), 200); }
+          else { del.textContent = '×'; del.disabled = false; }
+        } catch(_) { del.textContent = '×'; del.disabled = false; }
+      });
 
-      const meta = document.createElement('div');
-      meta.className = 'history-meta';
-      meta.textContent = `${item.total || 0} tweets · ${fmtTime(item.analyzed_at)}`;
-
-      const bar = document.createElement('div');
-      bar.className = 'history-bar';
-      bar.appendChild(historyBarSegment('hb-pos', item.positive_pct));
-      bar.appendChild(historyBarSegment('hb-neg', item.negative_pct));
-      bar.appendChild(historyBarSegment('hb-neu', item.neutral_pct));
-
-      row.appendChild(keyword);
-      row.appendChild(verdict);
-      row.appendChild(meta);
-      row.appendChild(bar);
+      // Click row to re-analyze
+      row.addEventListener('click', () => { document.getElementById('keyword').value = item.keyword||''; analyze(); });
+      row.append(del, kw, vd, meta, bar);
       el.appendChild(row);
     });
   }
 
-  function loadHistoryItem(keyword) {
-    document.getElementById('keyword').value = keyword;
-    analyze();
-  }
-
-  function fmtTime(iso) {
-    if (!iso) return '';
-    try {
-      return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-    } catch(_) { return iso; }
-  }
-
-  function fmtTweetTime(ts) {
-    if (!ts) return '—';
-    try {
-      // twikit returns strings like "Mon Feb 23 12:34:56 +0000 2026"
-      const d = new Date(ts);
-      if (isNaN(d)) return ts;
-      return d.toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' });
-    } catch(_) { return ts; }
-  }
-
+  // ── Analyze ──
   async function analyze() {
     const keyword = document.getElementById('keyword').value.trim();
     const count   = document.getElementById('count').value;
-    if (!keyword) { showError('Please enter a keyword.'); return; }
-    clearError();
-    setLoading(true);
+    if (!keyword) { showErr('Please enter a keyword.'); return; }
+
+    // Client-side cooldown guard
+    const rem = getCooldownSecs(keyword);
+    if (rem > 0) { startCooldownUI(keyword); return; }
+
+    clearErr(); setLoading(true); showSkel();
     setStatus(`Scanning the conversation for "${keyword}"…`);
     try {
       const res  = await fetch(`${API}/api/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, count: parseInt(count) })
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ keyword, count: parseInt(count, 10) })
       });
       const data = await res.json();
-      if (!res.ok) { showError(data.error || 'Server error.'); setStatus(''); return; }
-      if (!data.tweets?.length) { showError('No tweets found for this keyword.'); setStatus(''); return; }
+      if (!res.ok) { showErr(data.error || 'Server error.'); setStatus(''); restoreEmpty(); return; }
+      if (!data.tweets?.length) { showErr('No tweets found.'); setStatus(''); restoreEmpty(); return; }
+
+      // Record search time (only on fresh fetch, not cached)
+      if (!data.cached) lastSearch[keyword.toLowerCase()] = Date.now();
+
       allTweets = data.tweets;
-      renderResults(data.summary, 'all');
-      setStatus(`✦ Analysis complete — ${data.summary.total} tweets · ${new Date().toLocaleTimeString()}`);
-      loadHistory(); // refresh sidebar
-    } catch(e) {
-      showError('Cannot reach backend. Is Flask running on port 5000?');
-      setStatus('');
-    } finally {
-      setLoading(false);
-    }
+      renderResults(data.summary, 'all', data.cached);
+      const cachedNote = data.cached ? ' · cached' : '';
+      setStatus(`✦ Complete — ${data.summary.total} tweets · ${new Date().toLocaleTimeString()}${cachedNote}`);
+      addToRecent(keyword);
+      loadHistory();
+
+      // Start cooldown if fresh result
+      if (!data.cached) startCooldownUI(keyword);
+    } catch(_) { showErr('Cannot reach backend. Is Flask running on port 5000?'); setStatus(''); restoreEmpty(); }
+    finally { setLoading(false); }
   }
 
+  function showSkel() {
+    document.getElementById('results').innerHTML = `<div class="sk-wrap">
+      <div class="sk-card">
+        <div class="sk" style="width:30%;height:7px;margin-bottom:18px"></div>
+        <div class="sk" style="width:48%;height:52px"></div>
+        <div class="sk" style="width:36%;height:7px"></div>
+        <div style="display:flex;gap:14px;margin-top:16px;padding-top:16px;border-top:1px solid var(--bord)">
+          ${[1,2,3,4].map(()=>`<div class="sk" style="flex:1;height:30px;margin-bottom:0"></div>`).join('')}
+        </div>
+      </div>
+      <div class="sk-card">${[80,100,70,90,60].map(w=>`<div class="sk" style="width:${w}%"></div>`).join('')}</div>
+    </div>`;
+  }
+  function restoreEmpty() {
+    document.getElementById('results').innerHTML = `<div class="empty"><div class="empty-g">?</div><div class="empty-t">Enter a keyword to begin</div><div class="empty-h">Try: bitcoin · climate · AI · Taylor Swift</div></div>`;
+  }
+
+  // ── Render results ──
   function renderResults(summary, filter) {
     activeFilter = filter;
     const filtered = filter === 'all' ? allTweets : allTweets.filter(t => t.label === filter);
-    const safeVerdict = safeSentiment(summary.overall_sentiment);
-    document.getElementById('results').innerHTML = `
-      <div class="section-rule"><span class="section-rule-label">Verdict</span><div class="section-rule-line"></div></div>
-      <div class="verdict">
-        <div class="verdict-main">
-          <div class="verdict-eyebrow">Overall · "${escapeHtml(summary.keyword || '')}"</div>
-          <div class="verdict-word ${safeVerdict}">${safeVerdict.toUpperCase()}</div>
-          <div class="verdict-compound">avg compound: ${summary.avg_compound > 0 ? '+' : ''}${summary.avg_compound}</div>
-        </div>
-        <div class="verdict-stats">
-          <div class="v-stat">
-            <div class="v-stat-num tot">${summary.total}</div>
-            <div class="v-stat-label">Total</div>
+    const sv = ss(summary.overall_sentiment);
+    const counts = { all: allTweets.length, positive: allTweets.filter(t=>t.label==='positive').length, negative: allTweets.filter(t=>t.label==='negative').length, neutral: allTweets.filter(t=>t.label==='neutral').length };
+    const pp = clamp(summary.positive_pct), np = clamp(summary.negative_pct), ep = clamp(summary.neutral_pct);
+
+    document.getElementById('results').innerHTML = `<div class="sk-wrap">
+      <div class="sec-head"><span class="sec-lbl">Verdict</span><div class="sec-line"></div></div>
+      <div class="verdict ${sv}">
+        <div class="verdict-eye">Overall Sentiment · "${esc(summary.keyword||'')}"</div>
+        <div class="verdict-grid">
+          <div>
+            <div class="verdict-word ${sv}">${sv.toUpperCase()}</div>
+            <div class="verdict-sub">${summary.total} tweets analysed</div>
+            <div class="verdict-stats">
+              <div><div class="vs-num tot">${summary.total}</div><div class="vs-lbl">Total</div></div>
+              <div><div class="vs-num pos">${summary.positive_pct}%</div><div class="vs-lbl">Positive</div></div>
+              <div><div class="vs-num neg">${summary.negative_pct}%</div><div class="vs-lbl">Negative</div></div>
+              <div><div class="vs-num neu">${summary.neutral_pct}%</div><div class="vs-lbl">Neutral</div></div>
+            </div>
           </div>
-          <div class="v-stat">
-            <div class="v-stat-num pos">${summary.positive_pct}%</div>
-            <div class="v-stat-label">Positive</div>
-          </div>
-          <div class="v-stat">
-            <div class="v-stat-num neg">${summary.negative_pct}%</div>
-            <div class="v-stat-label">Negative</div>
-          </div>
-          <div class="v-stat">
-            <div class="v-stat-num neu">${summary.neutral_pct}%</div>
-            <div class="v-stat-label">Neutral</div>
-          </div>
+          <div class="gauge-wrap">${gauge(summary.avg_compound)}</div>
         </div>
       </div>
-      <div class="dist-bar-wrap">
-        <div class="dist-bar">
-          <div class="db-pos" style="width:${summary.positive_pct}%"></div>
-          <div class="db-neg" style="width:${summary.negative_pct}%"></div>
-          <div class="db-neu" style="width:${summary.neutral_pct}%"></div>
+      <div class="dist-wrap">
+        <div class="dist-bar" role="img" aria-label="Sentiment distribution">
+          <div class="dp" style="width:0%"></div><div class="dn" style="width:0%"></div><div class="dne" style="width:0%"></div>
         </div>
         <div class="dist-legend">
-          <div class="dl-item"><div class="dl-swatch" style="background:var(--pos)"></div>Positive ${summary.positive_pct}%</div>
-          <div class="dl-item"><div class="dl-swatch" style="background:var(--neg)"></div>Negative ${summary.negative_pct}%</div>
-          <div class="dl-item"><div class="dl-swatch" style="background:#c9a84c"></div>Neutral ${summary.neutral_pct}%</div>
+          <div class="dl"><div class="dl-dot" style="background:var(--pos)"></div>Positive ${summary.positive_pct}%</div>
+          <div class="dl"><div class="dl-dot" style="background:var(--neg)"></div>Negative ${summary.negative_pct}%</div>
+          <div class="dl"><div class="dl-dot" style="background:var(--neu)"></div>Neutral ${summary.neutral_pct}%</div>
         </div>
       </div>
-      <div class="section-rule"><span class="section-rule-label">Tweet Feed</span><div class="section-rule-line"></div></div>
-      <div class="tweet-controls">
-        <div class="tweet-count-label">${filtered.length} ${filter === 'all' ? 'total' : filter} tweets</div>
-        <div class="filter-group">
-          ${['all','positive','negative','neutral'].map(f =>
-            `<button class="filter-btn ${activeFilter===f?'active':''}" onclick="applyFilter('${f}')">${f}</button>`
-          ).join('')}
-        </div>
+      <div class="sec-head"><span class="sec-lbl">Tweet Feed</span><div class="sec-line"></div></div>
+      <div class="tweet-ctrl">
+        <div class="tweet-ct">${filtered.length} ${filter==='all'?'total':filter} tweets</div>
+        <div class="filter-row">${['all','positive','negative','neutral'].map(f=>`<button class="fb${activeFilter===f?' on':''}" onclick="applyFilter('${f}')">${f}<span class="fb-badge">${counts[f]}</span></button>`).join('')}</div>
       </div>
-      <table class="tweet-table">
-        <thead>
-          <tr>
-            <th style="width:80px">Label</th>
-            <th>Tweet</th>
-            <th style="width:90px">Engage</th>
-            <th style="width:72px">Score</th>
-          </tr>
-        </thead>
-        <tbody id="tweetBody">
-          ${renderRows(filtered)}
-        </tbody>
+      <table class="tw-table">
+        <thead><tr><th style="width:74px">Label</th><th>Tweet</th><th style="width:78px">Engage</th><th style="width:64px">Score</th></tr></thead>
+        <tbody id="tweetBody">${rows(filtered)}</tbody>
       </table>
-    `;
+    </div>`;
+
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const b = document.querySelectorAll('.dp,.dn,.dne');
+      if (b[0]) b[0].style.width=`${pp}%`;
+      if (b[1]) b[1].style.width=`${np}%`;
+      if (b[2]) b[2].style.width=`${ep}%`;
+    }));
   }
 
-  // Detect if text contains non-Latin/non-ASCII characters (likely non-English)
-  function isNonEnglish(text) {
-    // Match scripts like Devanagari, Malayalam, Arabic, CJK, Cyrillic, etc.
-    return /[\u0080-\uFFFF]/.test(text) &&
-           (text.replace(/[\u0000-\u007F]/g, '').length / text.length) > 0.3;
+  // ── 270° Speedometer gauge ──
+  function gauge(compound) {
+    const CX=100, CY=108, R=72, RN=62;
+    const toRad = d => d * Math.PI / 180;
+    const START=225, TOTAL=270;
+    const sr=toRad(START), er=toRad(START-TOTAL);
+    const sx=(CX+R*Math.cos(sr)).toFixed(2), sy=(CY-R*Math.sin(sr)).toFixed(2);
+    const ex=(CX+R*Math.cos(er)).toFixed(2), ey=(CY-R*Math.sin(er)).toFixed(2);
+    const n=Math.max(.001,Math.min(.999,(compound+1)/2));
+    const swr=toRad(n*TOTAL), fr=sr-swr;
+    const fx=(CX+R*Math.cos(fr)).toFixed(2), fy=(CY-R*Math.sin(fr)).toFixed(2);
+    const la=swr>Math.PI?1:0;
+    const nx=(CX+RN*Math.cos(fr)).toFixed(2), ny=(CY-RN*Math.sin(fr)).toFixed(2);
+    const bx=(CX-14*Math.cos(fr)).toFixed(2), by=(CY+14*Math.sin(fr)).toFixed(2);
+    const c=compound>=.05?'var(--pos)':compound<=-.05?'var(--neg)':'var(--neu)';
+    const sign=compound>0?'+':'';
+    const ticks=[0,.25,.5,.75,1].map(t=>{
+      const a=toRad(START-t*TOTAL);
+      const ox=(CX+(R+8)*Math.cos(a)).toFixed(2), oy=(CY-(R+8)*Math.sin(a)).toFixed(2);
+      const ix=(CX+(R+2)*Math.cos(a)).toFixed(2), iy=(CY-(R+2)*Math.sin(a)).toFixed(2);
+      return `<line x1="${ix}" y1="${iy}" x2="${ox}" y2="${oy}" stroke="var(--bord2)" stroke-width="1.5" stroke-linecap="round"/>`;
+    }).join('');
+    const lbls=[{t:0,l:'−1'},{t:.5,l:'0'},{t:1,l:'+1'}].map(({t,l})=>{
+      const a=toRad(START-t*TOTAL), lr=R+20;
+      return `<text x="${(CX+lr*Math.cos(a)).toFixed(2)}" y="${(CY-lr*Math.sin(a)+4).toFixed(2)}" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="var(--muted)">${l}</text>`;
+    }).join('');
+    return `<svg viewBox="0 0 200 145" width="200" height="145" aria-label="Compound score: ${sign}${compound}">
+      ${ticks}${lbls}
+      <path d="M ${sx} ${sy} A ${R} ${R} 0 1 1 ${ex} ${ey}" fill="none" stroke="var(--bord2)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M ${sx} ${sy} A ${R} ${R} 0 ${la} 1 ${fx} ${fy}" fill="none" stroke="${c}" stroke-width="7" stroke-linecap="round" opacity=".9"/>
+      <line x1="${bx}" y1="${by}" x2="${nx}" y2="${ny}" stroke="${c}" stroke-width="1.5" stroke-linecap="round" opacity=".65"/>
+      <circle cx="${CX}" cy="${CY}" r="5" fill="${c}" stroke="var(--surf)" stroke-width="2"/>
+      <circle cx="${nx}" cy="${ny}" r="3" fill="${c}"/>
+      <text x="${CX}" y="${CY-12}" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="16" font-weight="500" fill="${c}">${sign}${compound}</text>
+      <text x="${CX}" y="${CY+4}" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="7" fill="var(--muted)" letter-spacing="1.5">COMPOUND</text>
+    </svg>`;
   }
 
-  function tweetUrl(id) {
-    return `https://x.com/i/web/status/${id}`;
-  }
-
-  function renderRows(tweets) {
-    if (!tweets.length) return `<tr><td colspan="4" style="text-align:center;padding:32px;color:var(--ink3);font-family:'DM Mono',monospace;font-size:11px">No tweets match this filter</td></tr>`;
-    return tweets.map((t, i) => {
-      const nonEng = isNonEnglish(t.text);
-      const url    = tweetUrl(t.id);
-      const label  = safeSentiment(t.label);
-      return `
-      <tr class="${nonEng ? 'non-english-row' : ''}" style="animation-delay:${Math.min(i*0.035,0.5)}s">
-        <td>
-          <span class="tag tag-${label}">${label}</span>
-        </td>
-        <td class="tweet-text-cell">
-          ${escapeHtml(t.text)}
-          <div class="tweet-footer">
-            <a class="tweet-time" href="${url}" target="_blank" rel="noopener">
-              🕐 ${fmtTweetTime(t.created_at)} ↗
-            </a>
-            ${nonEng ? '<span class="non-english-badge">🌐 non-english · VADER may be inaccurate</span>' : ''}
-          </div>
-        </td>
-        <td class="tweet-meta-cell"><span class="likes">♥ ${t.likes}</span><br>↻ ${t.retweets}</td>
-        <td class="score-cell ${t.compound>0?'score-pos':t.compound<0?'score-neg':'score-neu'}">
-          ${t.compound>0?'+':''}${t.compound.toFixed(3)}
-        </td>
+  // ── Rows ──
+  function isNE(t) { return /[\u0080-\uFFFF]/.test(t) && t.replace(/[\u0000-\u007F]/g,'').length/t.length>.3; }
+  function rows(tweets) {
+    if (!tweets.length) return `<tr><td colspan="4" style="text-align:center;padding:28px;color:var(--muted);font-size:11px">No tweets match this filter</td></tr>`;
+    return tweets.map((t,i) => {
+      const ne=isNE(t.text), lbl=ss(t.label), url=`https://x.com/i/web/status/${encodeURIComponent(t.id)}`;
+      return `<tr class="${ne?'dimmed':''}" style="animation-delay:${Math.min(i*.03,.45)}s">
+        <td><span class="tag tag-${lbl}">${lbl}</span></td>
+        <td class="tw-text">${esc(t.text)}<div class="tw-foot">
+          <a class="tw-link" href="${url}" target="_blank" rel="noopener noreferrer">${fmtT(t.created_at)} ↗</a>
+          ${ne?'<span class="ne-badge">non-english</span>':''}
+        </div></td>
+        <td class="meta-cell"><span class="meta-h">♥ ${t.likes}</span><br>↻ ${t.retweets}</td>
+        <td class="sc-cell ${t.compound>.0?'sc-pos':t.compound<0?'sc-neg':'sc-neu'}">${t.compound>0?'+':''}${t.compound.toFixed(3)}</td>
       </tr>`;
     }).join('');
   }
 
-  function applyFilter(filter) {
-    activeFilter = filter;
-    const filtered = filter === 'all' ? allTweets : allTweets.filter(t => t.label === filter);
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.textContent === filter));
-    document.querySelector('.tweet-count-label').textContent = `${filtered.length} ${filter === 'all' ? 'total' : filter} tweets`;
-    document.getElementById('tweetBody').innerHTML = renderRows(filtered);
+  function applyFilter(f) {
+    activeFilter = f;
+    const filtered = f==='all' ? allTweets : allTweets.filter(t=>t.label===f);
+    document.querySelectorAll('.fb').forEach(b => b.classList.toggle('on', b.textContent.trim().startsWith(f)));
+    document.querySelector('.tweet-ct').textContent = `${filtered.length} ${f==='all'?'total':f} tweets`;
+    document.getElementById('tweetBody').innerHTML = rows(filtered);
   }
 
-  function escapeHtml(t) {
-    return String(t)
-      .replace(/&/g,'&amp;')
-      .replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;')
-      .replace(/"/g,'&quot;')
-      .replace(/'/g,'&#39;');
+  // ── Utils ──
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  const ss  = v => SENTS.has(v) ? v : 'neutral';
+  const clamp = v => { const n=Number(v); return isNaN(n)?0:Math.max(0,Math.min(100,n)); };
+  function setPBBadge(el, l) { el.textContent=''; const d=document.createElement('div'); d.className='pb-dot'; el.appendChild(d); el.appendChild(document.createTextNode(l)); }
+  function setLoading(on) { const b=document.getElementById('analyzeBtn'); b.disabled=on; b.textContent=on?'Scanning…':'Analyze →'; isLoading=on; }
+  function setStatus(m) {
+    const el=document.getElementById('statusRow'); el.textContent='';
+    if (!m) return;
+    if (m.includes('Scanning')) { const d=document.createElement('div'); d.className='status-dot'; el.appendChild(d); }
+    el.appendChild(document.createTextNode(m));
   }
-  function safeSentiment(v) {
-    return SENTIMENT_CLASSES.has(v) ? v : 'neutral';
-  }
-  function clampPct(v) {
-    const n = Number(v);
-    if (Number.isNaN(n)) return 0;
-    return Math.max(0, Math.min(100, n));
-  }
-  function historyBarSegment(cls, width) {
-    const seg = document.createElement('div');
-    seg.className = cls;
-    seg.style.width = `${clampPct(width)}%`;
-    return seg;
-  }
-  function setPocketBaseBadge(el, label) {
-    el.textContent = '';
-    const dot = document.createElement('div');
-    dot.className = 'pb-dot';
-    el.appendChild(dot);
-    el.appendChild(document.createTextNode(label));
-  }
-  function setLoading(on) {
-    const btn = document.getElementById('analyzeBtn');
-    btn.disabled = on;
-    btn.textContent = on ? 'Scanning…' : 'Analyze →';
-    isLoading = on;
-  }
-  function setStatus(msg) {
-    const el = document.getElementById('statusLine');
-    el.textContent = '';
-    if (!msg) return;
-    if (msg.includes('Scanning')) {
-      const dot = document.createElement('div');
-      dot.className = 'status-dot';
-      el.appendChild(dot);
-    }
-    el.appendChild(document.createTextNode(msg));
-  }
-  function showError(msg) {
-    const host = document.getElementById('errorBar');
-    host.textContent = '';
-    const box = document.createElement('div');
-    box.className = 'error-inner';
-    box.textContent = `⚠ ${msg}`;
-    host.appendChild(box);
-  }
-  function clearError() { document.getElementById('errorBar').textContent = ''; }
-  document.getElementById('keyword').addEventListener('keydown', e => { if (e.key === 'Enter') analyze(); });
+  function showErr(m) { const h=document.getElementById('errorBar'); h.textContent=''; const b=document.createElement('div'); b.className='err-box'; b.textContent=`⚠ ${m}`; h.appendChild(b); }
+  function clearErr() { document.getElementById('errorBar').textContent=''; }
+  function fmt(iso) { try { return new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); } catch(_){return iso||'';} }
+  function fmtT(ts) { try { const d=new Date(ts); return isNaN(d)?ts:d.toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}); } catch(_){return ts||'—';} }
 
-  function initAutoRefresh() {
-    const toggle = document.getElementById('autoRefresh');
-    toggle.addEventListener('change', () => {
-      if (toggle.checked) startAutoRefresh();
-      else stopAutoRefresh();
-    });
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) stopAutoRefresh();
-      else if (toggle.checked) startAutoRefresh();
-    });
-  }
+  document.getElementById('keyword').addEventListener('keydown', e => { if(e.key==='Enter') analyze(); });
 
-  function startAutoRefresh() {
-    stopAutoRefresh();
-    refreshTimer = setInterval(() => {
-      if (document.hidden) return;
-      if (isLoading) return;
-      const keyword = document.getElementById('keyword').value.trim();
-      if (!keyword) return;
-      analyze();
-    }, AUTO_REFRESH_MS);
+  function initAR() {
+    const t=document.getElementById('autoRefresh');
+    t.addEventListener('change', ()=>t.checked?startAR():stopAR());
+    document.addEventListener('visibilitychange', ()=>{ if(document.hidden) stopAR(); else if(t.checked) startAR(); });
   }
-
-  function stopAutoRefresh() {
-    if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
+  function startAR() { stopAR(); refreshTimer=setInterval(()=>{ if(!document.hidden&&!isLoading&&document.getElementById('keyword').value.trim()) analyze(); },60000); }
+  function stopAR()  { if(refreshTimer) clearInterval(refreshTimer); refreshTimer=null; }
 </script>
 </body>
 </html>
