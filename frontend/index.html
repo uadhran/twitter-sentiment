@@ -272,7 +272,8 @@
     .tag-positive { background: var(--pos-bg); color: var(--pos); border: 1px solid var(--pos-bord); }
     .tag-negative { background: var(--neg-bg); color: var(--neg); border: 1px solid var(--neg-bord); }
     .tag-neutral  { background: var(--neu-bg); color: var(--neu); border: 1px solid var(--neu-bord); }
-    .tw-text { color: var(--text2); line-height: 1.6; }
+    .tw-text { color: var(--text2); line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-height: 3.2em; }
+    #tweetTip { position: fixed; z-index: 999; max-width: 360px; background: var(--surf2); border: 1px solid var(--bord2); border-radius: 8px; padding: 12px 14px; font-size: 13px; line-height: 1.65; color: var(--text); box-shadow: 0 8px 32px rgba(0,0,0,.45); pointer-events: none; display: none; white-space: pre-wrap; word-break: break-word; }
     .tw-foot { display: flex; align-items: center; gap: 8px; margin-top: 5px; flex-wrap: wrap; }
     .tw-link { font-size: 10px; color: var(--acc); text-decoration: none; border-bottom: 1px dotted var(--acc); transition: opacity .15s; display: inline-flex; align-items: center; gap: 3px; }
     .tw-link:hover { opacity: .6; }
@@ -722,7 +723,7 @@
     if (!tweets.length) return `<tr><td colspan="4" style="text-align:center;padding:28px;color:var(--muted);font-size:11px">No tweets match this filter</td></tr>`;
     return tweets.map((t,i) => {
       const ne=isNE(t.text), lbl=ss(t.label), url=`https://x.com/i/web/status/${encodeURIComponent(t.id)}`;
-      return `<tr class="${ne?'dimmed':''}" style="animation-delay:${Math.min(i*.03,.45)}s">
+      return `<tr data-text="${t.text.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" class="${ne?'dimmed':''}" style="animation-delay:${Math.min(i*.03,.45)}s">
         <td><span class="tag tag-${lbl}">${lbl}</span></td>
         <td class="tw-text">${esc(t.text)}<div class="tw-foot">
           <a class="tw-link" href="${url}" target="_blank" rel="noopener noreferrer">${fmtT(t.created_at)} ↗</a>
@@ -768,6 +769,27 @@
   }
   function startAR() { stopAR(); refreshTimer=setInterval(()=>{ if(!document.hidden&&!isLoading&&document.getElementById('keyword').value.trim()) analyze(); },60000); }
   function stopAR()  { if(refreshTimer) clearInterval(refreshTimer); refreshTimer=null; }
+
+  // ── Tweet tooltip ──
+  (function() {
+    const tip = document.getElementById('tweetTip');
+    document.addEventListener('mouseover', e => {
+      const tr = e.target.closest('#tweetBody tr[data-text]');
+      if (!tr) { tip.style.display = 'none'; return; }
+      tip.textContent = tr.dataset.text;
+      tip.style.display = 'block';
+    });
+    document.addEventListener('mousemove', e => {
+      if (tip.style.display === 'none') return;
+      const x = e.clientX + 18, y = e.clientY + 14;
+      tip.style.left = Math.min(x, window.innerWidth  - 380) + 'px';
+      tip.style.top  = Math.min(y, window.innerHeight - 160) + 'px';
+    });
+    document.addEventListener('mouseout', e => {
+      if (!e.relatedTarget?.closest('#tweetBody tr[data-text]')) tip.style.display = 'none';
+    });
+  })();
 </script>
+<div id="tweetTip"></div>
 </body>
 </html>
