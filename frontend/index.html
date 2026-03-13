@@ -482,7 +482,7 @@
     list.forEach(kw => {
       const chip = document.createElement('span');
       chip.className = 'recent-chip';
-      chip.addEventListener('click', e => { if (e.target.classList.contains('recent-chip-x')) return; document.getElementById('keyword').value = kw; analyze(); });
+      chip.addEventListener('click', e => { if (e.target.classList.contains('recent-chip-x')) return; document.getElementById('keyword').value = kw; analyze(true); });
       const label = document.createTextNode(`#${kw}`);
       const x = document.createElement('span');
       x.className = 'recent-chip-x'; x.textContent = '×'; x.title = 'Remove';
@@ -563,22 +563,24 @@
         } catch(_) { del.textContent = '×'; del.disabled = false; }
       });
 
-      // Click row to re-analyze
-      row.addEventListener('click', () => { document.getElementById('keyword').value = item.keyword||''; analyze(); });
+      // Click row to re-analyze (bypass client cooldown — backend returns cached if needed)
+      row.addEventListener('click', () => { document.getElementById('keyword').value = item.keyword||''; analyze(true); });
       row.append(del, kw, vd, meta, bar);
       el.appendChild(row);
     });
   }
 
   // ── Analyze ──
-  async function analyze() {
+  async function analyze(skipCooldown = false) {
     const keyword = document.getElementById('keyword').value.trim();
     const count   = document.getElementById('count').value;
     if (!keyword) { showErr('Please enter a keyword.'); return; }
 
-    // Client-side cooldown guard
-    const rem = getCooldownSecs(keyword);
-    if (rem > 0) { startCooldownUI(keyword); return; }
+    // Client-side cooldown guard (skipped when triggered from history)
+    if (!skipCooldown) {
+      const rem = getCooldownSecs(keyword);
+      if (rem > 0) { startCooldownUI(keyword); return; }
+    }
 
     clearErr(); setLoading(true); showSkel();
     setStatus(`Scanning the conversation for "${keyword}"…`);
