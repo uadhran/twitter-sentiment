@@ -274,6 +274,40 @@
     .tag-neutral  { background: var(--neu-bg); color: var(--neu); border: 1px solid var(--neu-bord); }
     .tw-text { color: var(--text2); line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-height: 3.2em; }
     #tweetTip { position: fixed; z-index: 999; max-width: 360px; background: var(--surf2); border: 1px solid var(--bord2); border-radius: 8px; padding: 12px 14px; font-size: 13px; line-height: 1.65; color: var(--text); box-shadow: 0 8px 32px rgba(0,0,0,.45); pointer-events: none; display: none; white-space: pre-wrap; word-break: break-word; }
+
+    /* ── Tweet cards ── */
+    .tw-cards { display: flex; flex-direction: column; gap: 6px; }
+    .tw-card { background: var(--surf); border: 1px solid var(--bord); border-radius: 6px; padding: 12px 14px 10px 14px; border-left: 3px solid var(--bord2); display: grid; grid-template-columns: 1fr auto; gap: 10px; animation: rowIn .22s ease both; transition: background .12s, border-color .12s; cursor: default; }
+    .tw-card.positive { border-left-color: var(--pos); }
+    .tw-card.negative { border-left-color: var(--neg); }
+    .tw-card.neutral  { border-left-color: var(--neu); }
+    .tw-card:hover { background: var(--surf2); }
+    .tw-card-top { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+    .tw-card-meta { font-size: 10px; color: var(--muted); margin-top: 6px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .tw-card-score { font-size: 12px; font-family: 'JetBrains Mono', monospace; text-align: right; align-self: start; padding-top: 2px; }
+
+    /* ── Animated sentiment icons ── */
+    @keyframes bounce-up   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
+    @keyframes bounce-down { 0%,100%{transform:translateY(0)} 50%{transform:translateY(3px)} }
+    @keyframes spin-slow   { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+    .sent-icon { display:inline-block; font-style:normal; line-height:1; }
+    .sent-icon.positive { animation: bounce-up   2s ease-in-out infinite; }
+    .sent-icon.negative { animation: bounce-down 2s ease-in-out infinite; }
+    .sent-icon.neutral  { animation: spin-slow   5s linear infinite; display:inline-block; }
+
+    /* ── Animated counters ── */
+    @keyframes numIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:none} }
+    .vs-num { animation: numIn .5s ease both; }
+
+    /* ── Empty state wave ── */
+    @keyframes wave-bar { 0%,100%{transform:scaleY(.4);opacity:.35} 50%{transform:scaleY(1);opacity:1} }
+    .empty-wave { display:flex; align-items:center; gap:4px; justify-content:center; height:36px; margin-bottom:14px; }
+    .empty-wave span { display:inline-block; width:4px; background:var(--acc); border-radius:2px; animation: wave-bar 1.3s ease-in-out infinite; }
+    .empty-wave span:nth-child(1){height:12px;animation-delay:0s}
+    .empty-wave span:nth-child(2){height:22px;animation-delay:.1s}
+    .empty-wave span:nth-child(3){height:30px;animation-delay:.2s}
+    .empty-wave span:nth-child(4){height:22px;animation-delay:.3s}
+    .empty-wave span:nth-child(5){height:12px;animation-delay:.4s}
     .tw-foot { display: flex; align-items: center; gap: 8px; margin-top: 5px; flex-wrap: wrap; }
     .tw-link { font-size: 10px; color: var(--acc); text-decoration: none; border-bottom: 1px dotted var(--acc); transition: opacity .15s; display: inline-flex; align-items: center; gap: 3px; }
     .tw-link:hover { opacity: .6; }
@@ -404,7 +438,7 @@
     <div id="errorBar"></div>
     <div id="results">
       <div class="empty">
-        <div class="empty-g">?</div>
+        <div class="empty-wave"><span></span><span></span><span></span><span></span><span></span></div>
         <div class="empty-t">Enter a keyword to begin</div>
         <div class="empty-h">Try: bitcoin · climate · AI · Taylor Swift</div>
       </div>
@@ -667,10 +701,7 @@
         <div class="tweet-ct">${filtered.length} ${filter==='all'?'total':filter} tweets</div>
         <div class="filter-row">${['all','positive','negative','neutral'].map(f=>`<button class="fb${activeFilter===f?' on':''}" onclick="applyFilter('${f}')">${f}<span class="fb-badge">${counts[f]}</span></button>`).join('')}</div>
       </div>
-      <table class="tw-table">
-        <thead><tr><th style="width:74px">Label</th><th>Tweet</th><th style="width:78px">Engage</th><th style="width:64px">Score</th></tr></thead>
-        <tbody id="tweetBody">${rows(filtered)}</tbody>
-      </table>
+      <div class="tw-cards" id="tweetBody">${rows(filtered)}</div>
     </div>`;
 
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -678,7 +709,20 @@
       if (b[0]) b[0].style.width=`${pp}%`;
       if (b[1]) b[1].style.width=`${np}%`;
       if (b[2]) b[2].style.width=`${ep}%`;
+      document.querySelectorAll('.vs-num.tot').forEach(el => animCount(el, summary.total));
+      document.querySelectorAll('.vs-num.pos').forEach(el => animCount(el, summary.positive_pct, '%'));
+      document.querySelectorAll('.vs-num.neg').forEach(el => animCount(el, summary.negative_pct, '%'));
+      document.querySelectorAll('.vs-num.neu').forEach(el => animCount(el, summary.neutral_pct, '%'));
     }));
+  }
+
+  function animCount(el, target, suffix='', dur=700) {
+    const start = Date.now();
+    (function tick() {
+      const p = Math.min(1, (Date.now()-start)/dur);
+      el.textContent = Math.round(target * (1-Math.pow(1-p,3))) + suffix;
+      if (p < 1) requestAnimationFrame(tick);
+    })();
   }
 
   // ── 270° Speedometer gauge ──
@@ -719,21 +763,28 @@
     </svg>`;
   }
 
-  // ── Rows ──
+  // ── Rows (tweet cards) ──
   function isNE(t) { return /[\u0080-\uFFFF]/.test(t) && t.replace(/[\u0000-\u007F]/g,'').length/t.length>.3; }
+  const SENT_ICON = { positive:'↑', negative:'↓', neutral:'◌' };
   function rows(tweets) {
-    if (!tweets.length) return `<tr><td colspan="4" style="text-align:center;padding:28px;color:var(--muted);font-size:11px">No tweets match this filter</td></tr>`;
+    if (!tweets.length) return `<div style="text-align:center;padding:28px;color:var(--muted);font-size:11px">No tweets match this filter</div>`;
     return tweets.map((t,i) => {
       const ne=isNE(t.text), lbl=ss(t.label), url=`https://x.com/i/web/status/${encodeURIComponent(t.id)}`;
-      return `<tr data-text="${t.text.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" class="${ne?'dimmed':''}" style="animation-delay:${Math.min(i*.03,.45)}s">
-        <td><span class="tag tag-${lbl}">${lbl}</span></td>
-        <td class="tw-text">${esc(t.text)}<div class="tw-foot">
-          <a class="tw-link" href="${url}" target="_blank" rel="noopener noreferrer">${fmtT(t.created_at)} ↗</a>
-          ${ne?'<span class="ne-badge">non-english</span>':''}
-        </div></td>
-        <td class="meta-cell"><span class="meta-h">♥ ${t.likes}</span><br>↻ ${t.retweets}</td>
-        <td class="sc-cell ${t.compound>.0?'sc-pos':t.compound<0?'sc-neg':'sc-neu'}">${t.compound>0?'+':''}${t.compound.toFixed(3)}</td>
-      </tr>`;
+      const sc = t.compound > 0 ? '+' : '';
+      return `<div data-text="${t.text.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" class="tw-card ${lbl}${ne?' dimmed':''}" style="animation-delay:${Math.min(i*.03,.45)}s">
+        <div>
+          <div class="tw-card-top">
+            <span class="tag tag-${lbl}"><em class="sent-icon ${lbl}">${SENT_ICON[lbl]}</em> ${lbl}</span>
+            ${ne?'<span class="ne-badge">non-english</span>':''}
+          </div>
+          <div class="tw-text">${esc(t.text)}</div>
+          <div class="tw-card-meta">
+            <span>♥ ${t.likes}</span><span>↻ ${t.retweets}</span>
+            <a class="tw-link" href="${url}" target="_blank" rel="noopener noreferrer">${fmtT(t.created_at)} ↗</a>
+          </div>
+        </div>
+        <div class="tw-card-score ${t.compound>.0?'sc-pos':t.compound<0?'sc-neg':'sc-neu'}">${sc}${t.compound.toFixed(3)}</div>
+      </div>`;
     }).join('');
   }
 
@@ -764,6 +815,18 @@
 
   document.getElementById('keyword').addEventListener('keydown', e => { if(e.key==='Enter') analyze(); });
 
+  // ── Rotating placeholder ──
+  (function() {
+    const ph = ['bitcoin · BTC','climate change','artificial intelligence','Elon Musk','Taylor Swift','stock market','india · भारत'];
+    let i = 0;
+    const kw = document.getElementById('keyword');
+    setInterval(() => {
+      if (document.activeElement === kw || kw.value) return;
+      i = (i + 1) % ph.length;
+      kw.placeholder = ph[i];
+    }, 2800);
+  })();
+
   function initAR() {
     const t=document.getElementById('autoRefresh');
     t.addEventListener('change', ()=>t.checked?startAR():stopAR());
@@ -776,7 +839,7 @@
   (function() {
     const tip = document.getElementById('tweetTip');
     document.addEventListener('mouseover', e => {
-      const tr = e.target.closest('#tweetBody tr[data-text]');
+      const tr = e.target.closest('#tweetBody [data-text]');
       if (!tr) { tip.style.display = 'none'; return; }
       tip.textContent = tr.dataset.text;
       tip.style.display = 'block';
@@ -788,7 +851,7 @@
       tip.style.top  = Math.min(y, window.innerHeight - 160) + 'px';
     });
     document.addEventListener('mouseout', e => {
-      if (!e.relatedTarget?.closest('#tweetBody tr[data-text]')) tip.style.display = 'none';
+      if (!e.relatedTarget?.closest('#tweetBody [data-text]')) tip.style.display = 'none';
     });
   })();
 </script>
