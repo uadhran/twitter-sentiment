@@ -28,7 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DEFAULT_TWEET_COUNT = 20
-MAX_TWEET_COUNT = 40
+MAX_TWEET_COUNT = 100  # Higher limit supported via TwitterAPI.io pagination
 DEFAULT_HISTORY_LIMIT = 20
 MAX_HISTORY_LIMIT = 100
 MIN_KEYWORD_LEN = 2
@@ -45,6 +45,9 @@ RATE_LIMIT_MAX_REQUESTS = 30
 CACHE_TTL_SECONDS = 30
 MAX_CACHE_ENTRIES = 200
 MIN_REFRESH_SECONDS = 45
+
+TWITTERAPI_IO_KEY = os.getenv("TWITTERAPI_IO_KEY", "")
+TWITTERAPI_IO_BASE = "https://api.twitterapi.io"
 
 _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
@@ -341,41 +344,122 @@ def set_cached(keyword: str, count: int, payload: dict) -> None:
     _analysis_cache[(keyword.lower(), count)] = (time.time(), payload)
 
 
-async def fetch_and_analyze(keyword: str, count: int) -> dict:
+async def _fetch_raw_twitterapi_io(keyword: str, count: int) -> list[dict]:
+    """Fetch tweets from TwitterAPI.io. Paginates until count reached or 429 stops it."""
+    if not TWITTERAPI_IO_KEY:
+        raise ValueError("TWITTERAPI_IO_KEY not configured")
+
+    tweets: list[dict] = []
+    cursor: str | None = None
+
+    async with httpx.AsyncClient(timeout=FETCH_TIMEOUT_SECONDS) as client:
+        while len(tweets) < count:
+            params: dict[str, Any] = {"query": keyword, "queryType": "Latest"}
+            if cursor:
+                params["cursor"] = cursor
+
+            resp = await client.get(
+                f"{TWITTERAPI_IO_BASE}/twitter/tweet/advanced_search",
+                params=params,
+                headers={"x-api-key": TWITTERAPI_IO_KEY},
+            )
+
+            if resp.status_code == 429:
+                if tweets:
+                    # Got some tweets already — return them as-is, don't fall back
+                    logger.warning("[twitterapi.io] 429 on page %d — returning %d tweets collected so far", len(tweets) // 20 + 1, len(tweets))
+                    break
+                # 429 on the very first request — let caller fall back to Twikit
+                resp.raise_for_status()
+
+            resp.raise_for_status()
+            data = resp.json()
+            batch = data.get("tweets", [])
+            tweets.extend(batch)
+            logger.info("[twitterapi.io] fetched %d tweets (total: %d)", len(batch), len(tweets))
+
+            if not data.get("has_next_page") or not batch:
+                break
+            cursor = data.get("next_cursor")
+
+    return tweets[:count]
+
+
+def _normalize_twitterapi_io_tweet(raw: dict) -> dict:
+    """Map a TwitterAPI.io tweet dict to our internal tweet format."""
+    text = raw.get("text", "")
+    cleaned = clean_tweet(text)
+    scores = analyzer.polarity_scores(cleaned)
+    label = classify(scores["compound"])
+    return {
+        "id": str(raw.get("id", "")),
+        "text": text,
+        "cleaned": cleaned,
+        "compound": round(scores["compound"], 4),
+        "positive": round(scores["pos"], 4),
+        "negative": round(scores["neg"], 4),
+        "neutral": round(scores["neu"], 4),
+        "label": label,
+        "created_at": raw.get("createdAt") or None,
+        "likes": raw.get("likeCount", 0) or 0,
+        "retweets": raw.get("retweetCount", 0) or 0,
+    }
+
+
+async def _fetch_raw_twikit(keyword: str, count: int) -> list:
+    """Fetch raw tweet objects via Twikit scraping."""
     await ensure_login()
-    tweets = await asyncio.wait_for(
+    page = await asyncio.wait_for(
         twitter_client.search_tweet(keyword, product="Latest", count=count),
         timeout=FETCH_TIMEOUT_SECONDS,
     )
+    all_tweets = list(page)
+    logger.info("[twikit] page 1: %d tweets", len(all_tweets))
+    page_num = 1
+    while len(all_tweets) < count and page_num < 5:
+        try:
+            if not hasattr(page, "next") or page.next is None:
+                break
+            next_page = await asyncio.wait_for(page.next(), timeout=FETCH_TIMEOUT_SECONDS)
+            if not next_page:
+                break
+            page = next_page
+            page_num += 1
+            batch = list(page)
+            all_tweets.extend(batch)
+            logger.info("[twikit] page %d: %d tweets (total: %d)", page_num, len(batch), len(all_tweets))
+        except Exception as e:
+            logger.warning("[twikit] pagination stopped at page %d: %s", page_num, e)
+            break
+    return all_tweets[:count]
 
-    results, sentiments, compounds = (
-        [],
-        {"positive": 0, "negative": 0, "neutral": 0},
-        [],
-    )
 
-    for tweet in tweets:
-        cleaned = clean_tweet(tweet.text)
-        scores = analyzer.polarity_scores(cleaned)
-        label = classify(scores["compound"])
-        sentiments[label] += 1
-        compounds.append(scores["compound"])
-        results.append(
-            {
-                "id": str(tweet.id),
-                "text": tweet.text,
-                "cleaned": cleaned,
-                "compound": round(scores["compound"], 4),
-                "positive": round(scores["pos"], 4),
-                "negative": round(scores["neg"], 4),
-                "neutral": round(scores["neu"], 4),
-                "label": label,
-                "created_at": tweet.created_at or None,
-                "likes": getattr(tweet, "favorite_count", 0) or 0,
-                "retweets": getattr(tweet, "retweet_count", 0) or 0,
-            }
-        )
+def _normalize_twikit_tweet(tweet: Any) -> dict:
+    text = tweet.text
+    cleaned = clean_tweet(text)
+    scores = analyzer.polarity_scores(cleaned)
+    label = classify(scores["compound"])
+    return {
+        "id": str(tweet.id),
+        "text": text,
+        "cleaned": cleaned,
+        "compound": round(scores["compound"], 4),
+        "positive": round(scores["pos"], 4),
+        "negative": round(scores["neg"], 4),
+        "neutral": round(scores["neu"], 4),
+        "label": label,
+        "created_at": tweet.created_at or None,
+        "likes": getattr(tweet, "favorite_count", 0) or 0,
+        "retweets": getattr(tweet, "retweet_count", 0) or 0,
+    }
 
+
+def _build_response(keyword: str, results: list[dict], source: str) -> dict:
+    sentiments = {"positive": 0, "negative": 0, "neutral": 0}
+    compounds = []
+    for t in results:
+        sentiments[t["label"]] += 1
+        compounds.append(t["compound"])
     total = len(results)
     avg_compound = round(sum(compounds) / total, 4) if total else 0
     summary = {
@@ -390,8 +474,25 @@ async def fetch_and_analyze(keyword: str, count: int) -> dict:
         "avg_compound": avg_compound,
         "overall_sentiment": classify(avg_compound),
         "analyzed_at": datetime.now(timezone.utc).isoformat(),
+        "source": source,
     }
     return {"tweets": results, "summary": summary, "keyword": keyword}
+
+
+async def fetch_and_analyze(keyword: str, count: int) -> dict:
+    """Hybrid: TwitterAPI.io when key is set (with graceful 429 stop), else Twikit."""
+    if TWITTERAPI_IO_KEY:
+        try:
+            raw = await _fetch_raw_twitterapi_io(keyword, count)
+            results = [_normalize_twitterapi_io_tweet(t) for t in raw]
+            logger.info("[fetch] TwitterAPI.io: %d tweets", len(results))
+            return _build_response(keyword, results, "twitterapi.io")
+        except Exception as e:
+            logger.warning("[fetch] TwitterAPI.io failed on first request: %s — falling back to Twikit", e)
+
+    raw = await _fetch_raw_twikit(keyword, count)
+    logger.info("[fetch] Twikit: %d / %d tweets", len(raw), count)
+    return _build_response(keyword, [_normalize_twikit_tweet(t) for t in raw], "twikit")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
