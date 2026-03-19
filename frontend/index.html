@@ -144,6 +144,10 @@
       font-weight: 300; line-height: 1.2; color: var(--text2); margin-bottom: 18px;
     }
     .search-headline strong { font-weight: 700; color: var(--text); font-style: italic; }
+    .src-toggle { display: flex; gap: 6px; margin-bottom: 10px; }
+    .src-btn { padding: 5px 14px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 400; letter-spacing: .5px; background: var(--surf); border: 1px solid var(--bord); border-radius: 2px; color: var(--muted); cursor: pointer; transition: all .15s; }
+    .src-btn:hover { border-color: var(--bord2); color: var(--text2); }
+    .src-btn.active { background: var(--surf2); border-color: var(--acc); color: var(--acc); }
     .search-box {
       display: flex; background: var(--surf);
       border: 1px solid var(--bord); border-radius: 2px; overflow: hidden;
@@ -433,7 +437,7 @@
       <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle theme">◐</button>
     </div>
   </div>
-  <div class="hdr-sub">Real-time sentiment intelligence · VADER NLP · Twitter / X</div>
+  <div class="hdr-sub" id="hdrSub">Real-time sentiment intelligence · VADER NLP · Twitter / X</div>
 </header>
 
 <div class="page">
@@ -441,6 +445,10 @@
     <section class="search-section">
       <div class="search-kicker">Analysis Target</div>
       <h2 class="search-headline">What is the world <strong>saying right now?</strong></h2>
+      <div class="src-toggle" id="srcToggle">
+        <button class="src-btn active" id="srcTwitter" onclick="setSource('twitter')">⌘ Twitter</button>
+        <button class="src-btn" id="srcNews" onclick="setSource('news')">⊡ News</button>
+      </div>
       <div class="search-box">
         <span class="search-hash">#</span>
         <input id="keyword" type="text" placeholder="keyword, topic or phrase…" autocomplete="off" maxlength="80"/>
@@ -452,6 +460,7 @@
           <option value="50">50 tweets</option>
           <option value="100">100 tweets</option>
         </select>
+        <!-- labels are updated dynamically by setSource() -->
         <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">Analyze →</button>
       </div>
       <div class="search-foot">
@@ -493,7 +502,24 @@
   const MIN_REFRESH = 45; // must match backend MIN_REFRESH_SECONDS
   let allTweets = [], activeFilter = 'all', isLoading = false, refreshTimer = null;
   let cooldownTimer = null;
+  let activeSource = 'twitter';
+  let vizMode = 'meter'; // 'meter' | 'chart'
   const lastSearch = {}; // keyword.lower -> timestamp (ms)
+
+  const COUNT_VALS = [10, 20, 30, 40, 50, 100];
+  const SRC_LABEL = { twitter: 'tweets', news: 'articles' };
+  const SRC_SUB   = { twitter: 'Real-time sentiment intelligence · VADER NLP · Twitter / X', news: 'Real-time sentiment intelligence · VADER NLP · Google News (English)' };
+
+  function setSource(src) {
+    activeSource = src;
+    document.getElementById('srcTwitter').classList.toggle('active', src === 'twitter');
+    document.getElementById('srcNews').classList.toggle('active', src === 'news');
+    // Re-label count options (same values, label changes)
+    const sel = document.getElementById('count');
+    const cur = sel.value;
+    sel.innerHTML = COUNT_VALS.map(v => `<option value="${v}"${v==cur?' selected':''}>${v} ${SRC_LABEL[src]}</option>`).join('');
+    document.getElementById('hdrSub').textContent = SRC_SUB[src];
+  }
 
   // ── Theme ──
   function applyTheme(t) {
@@ -646,16 +672,17 @@
       if (rem > 0) { startCooldownUI(keyword); return; }
     }
 
+    const itemLabel = activeSource === 'news' ? 'articles' : 'tweets';
     clearErr(); setLoading(true); showSkel();
     setStatus(`Scanning the conversation for "${keyword}"…`);
     try {
       const res  = await fetch(`${API}/api/analyze`, {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ keyword, count: parseInt(count, 10) })
+        body: JSON.stringify({ keyword, count: parseInt(count, 10), source: activeSource })
       });
       const data = await res.json();
       if (!res.ok) { showErr(data.error || 'Server error.'); setStatus(''); restoreEmpty(); return; }
-      if (!data.tweets?.length) { showErr('No tweets found.'); setStatus(''); restoreEmpty(); return; }
+      if (!data.tweets?.length) { showErr(`No ${itemLabel} found.`); setStatus(''); restoreEmpty(); return; }
 
       // Record search time (only on fresh fetch, not cached)
       if (!data.cached) lastSearch[keyword.toLowerCase()] = Date.now();
@@ -663,8 +690,8 @@
       allTweets = data.tweets;
       renderResults(data.summary, 'all', data.cached);
       const cachedNote = data.cached ? ' · cached' : '';
-      setStatus(`✦ Complete — ${data.summary.total} tweets · ${new Date().toLocaleTimeString()}${cachedNote}`);
-      showToast(`${data.summary.overall_sentiment.toUpperCase()} · ${data.summary.total} tweets · #${keyword}`, data.cached ? 'info' : 'success', 3500);
+      setStatus(`✦ Complete — ${data.summary.total} ${itemLabel} · ${new Date().toLocaleTimeString()}${cachedNote}`);
+      showToast(`${data.summary.overall_sentiment.toUpperCase()} · ${data.summary.total} ${itemLabel} · #${keyword}`, data.cached ? 'info' : 'success', 3500);
       addToRecent(keyword);
       loadHistory();
 
@@ -694,6 +721,7 @@
   // ── Render results ──
   function renderResults(summary, filter) {
     activeFilter = filter;
+    vizMode = 'meter';
     const filtered = filter === 'all' ? allTweets : allTweets.filter(t => t.label === filter);
     const sv = ss(summary.overall_sentiment);
     const counts = { all: allTweets.length, positive: allTweets.filter(t=>t.label==='positive').length, negative: allTweets.filter(t=>t.label==='negative').length, neutral: allTweets.filter(t=>t.label==='neutral').length };
@@ -706,7 +734,7 @@
         <div class="verdict-grid">
           <div>
             <div class="verdict-word ${sv}">${sv.toUpperCase()}</div>
-            <div class="verdict-sub">${summary.total} tweets analysed</div>
+            <div class="verdict-sub">${summary.total} ${SRC_LABEL[activeSource]} analysed</div>
             <div class="verdict-stats">
               <div><div class="vs-num tot">${summary.total}</div><div class="vs-lbl">Total</div></div>
               <div><div class="vs-num pos">${summary.positive_pct}%</div><div class="vs-lbl">Positive</div></div>
@@ -714,7 +742,13 @@
               <div><div class="vs-num neu">${summary.neutral_pct}%</div><div class="vs-lbl">Neutral</div></div>
             </div>
           </div>
-          <div class="gauge-wrap">${gauge(summary.avg_compound)}</div>
+          <div class="gauge-wrap">
+            <div style="text-align:center;margin-bottom:4px">
+              <button class="viz-toggle" onclick="toggleViz()" style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 10px;background:var(--surf2);border:1px solid var(--bord2);border-radius:2px;color:var(--muted);cursor:pointer;letter-spacing:.5px">▦ Chart</button>
+            </div>
+            <div class="viz-meter">${gauge(summary.avg_compound)}</div>
+            <div class="viz-chart" style="display:none">${barChart(allTweets)}</div>
+          </div>
         </div>
       </div>
       <div class="dist-wrap">
@@ -727,9 +761,9 @@
           <div class="dl"><div class="dl-dot" style="background:var(--neu)"></div>Neutral ${summary.neutral_pct}%</div>
         </div>
       </div>
-      <div class="sec-head"><span class="sec-lbl">Tweet Feed</span><div class="sec-line"></div></div>
+      <div class="sec-head"><span class="sec-lbl">${activeSource === 'news' ? 'Article Feed' : 'Tweet Feed'}</span><div class="sec-line"></div></div>
       <div class="tweet-ctrl">
-        <div class="tweet-ct">${filtered.length} ${filter==='all'?'total':filter} tweets</div>
+        <div class="tweet-ct">${filtered.length} ${filter==='all'?'total':filter} ${SRC_LABEL[activeSource]}</div>
         <div class="filter-row">${['all','positive','negative','neutral'].map(f=>`<button class="fb${activeFilter===f?' on':''}" onclick="applyFilter('${f}')">${f}<span class="fb-badge">${counts[f]}</span></button>`).join('')}</div>
       </div>
       <div class="tw-cards" id="tweetBody">${rows(filtered)}</div>
@@ -829,14 +863,50 @@
     </svg>`;
   }
 
+  // ── Bar chart ──
+  function barChart(tweets) {
+    if (!tweets.length) return '';
+    const W = 220, H = 130, MID = 58, PAD = 18;
+    const innerW = W - PAD * 2;
+    const bw = Math.max(1.5, innerW / tweets.length - 0.8);
+    const bars = tweets.map((t, i) => {
+      const x = PAD + i * (innerW / tweets.length);
+      const h = Math.abs(t.compound) * (MID - 6);
+      const y = t.compound >= 0 ? MID - h : MID;
+      const col = t.compound >= 0.05 ? 'var(--pos)' : t.compound <= -0.05 ? 'var(--neg)' : 'var(--neu)';
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1.5, h).toFixed(1)}" fill="${col}" opacity=".8" rx="0.5"/>`;
+    }).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-label="Compound score distribution">
+      <line x1="${PAD}" y1="6" x2="${PAD}" y2="${MID*2}" stroke="var(--bord2)" stroke-width=".5"/>
+      <line x1="${PAD}" y1="${MID}" x2="${W-PAD+2}" y2="${MID}" stroke="var(--bord2)" stroke-width="1"/>
+      <text x="${PAD-4}" y="10" text-anchor="end" font-family="'JetBrains Mono',monospace" font-size="6" fill="var(--muted)">+1</text>
+      <text x="${PAD-4}" y="${MID+3}" text-anchor="end" font-family="'JetBrains Mono',monospace" font-size="6" fill="var(--muted)">0</text>
+      <text x="${PAD-4}" y="${MID*2}" text-anchor="end" font-family="'JetBrains Mono',monospace" font-size="6" fill="var(--muted)">−1</text>
+      ${bars}
+      <text x="${W/2}" y="${H-1}" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="6.5" fill="var(--muted)">${tweets.length} ${SRC_LABEL[activeSource]}</text>
+    </svg>`;
+  }
+
+  function toggleViz() {
+    vizMode = vizMode === 'meter' ? 'chart' : 'meter';
+    const gw = document.querySelector('.gauge-wrap');
+    if (!gw) return;
+    gw.querySelector('.viz-meter').style.display = vizMode === 'meter' ? '' : 'none';
+    gw.querySelector('.viz-chart').style.display = vizMode === 'chart' ? '' : 'none';
+    gw.querySelector('.viz-toggle').textContent = vizMode === 'meter' ? '▦ Chart' : '◎ Meter';
+  }
+
   // ── Rows (tweet cards) ──
   function isNE(t) { return /[\u0080-\uFFFF]/.test(t) && t.replace(/[\u0000-\u007F]/g,'').length/t.length>.3; }
   const SENT_ICON = { positive:'↑', negative:'↓', neutral:'◌' };
   const SENT_RGB  = { positive:'34,197,94', negative:'239,68,68', neutral:'245,158,11' };
   function rows(tweets) {
-    if (!tweets.length) return `<div style="text-align:center;padding:28px;color:var(--muted);font-size:11px">No tweets match this filter</div>`;
+    const isNews = activeSource === 'news';
+    const emptyLabel = isNews ? 'articles' : 'tweets';
+    if (!tweets.length) return `<div style="text-align:center;padding:28px;color:var(--muted);font-size:11px">No ${emptyLabel} match this filter</div>`;
     return tweets.map((t,i) => {
-      const ne=isNE(t.text), lbl=ss(t.label), url=`https://x.com/i/web/status/${encodeURIComponent(t.id)}`;
+      const ne=isNE(t.text), lbl=ss(t.label);
+      const url = isNews ? (t.url || '#') : `https://x.com/i/web/status/${encodeURIComponent(t.id)}`;
       const sc = t.compound > 0 ? '+' : '';
       // Heat map: intensity of compound drives background tint
       const intensity = Math.min(Math.abs(t.compound), 1);
@@ -845,6 +915,9 @@
       // Score bar: position on -1..+1 scale
       const barPct = ((t.compound + 1) / 2 * 100).toFixed(1);
       const barCol = t.compound>=.05?'var(--pos)':t.compound<=-.05?'var(--neg)':'var(--neu)';
+      const meta = isNews
+        ? `${t.source_name ? `<span>${esc(t.source_name)}</span>` : ''}<a class="tw-link" href="${url}" target="_blank" rel="noopener noreferrer">${fmtT(t.created_at)} ↗</a>`
+        : `<span>♥ ${t.likes}</span><span>↻ ${t.retweets}</span><a class="tw-link" href="${url}" target="_blank" rel="noopener noreferrer">${fmtT(t.created_at)} ↗</a>`;
       return `<div data-text="${t.text.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" class="tw-card ${lbl}${ne?' dimmed':''}" style="animation-delay:${Math.min(i*.03,.45)}s;${heatBg?'background:'+heatBg:''}">
         <div style="min-width:0">
           <div class="tw-card-top">
@@ -852,10 +925,7 @@
             ${ne?'<span class="ne-badge">non-english</span>':''}
           </div>
           <div class="tw-text">${esc(t.text)}</div>
-          <div class="tw-card-meta">
-            <span>♥ ${t.likes}</span><span>↻ ${t.retweets}</span>
-            <a class="tw-link" href="${url}" target="_blank" rel="noopener noreferrer">${fmtT(t.created_at)} ↗</a>
-          </div>
+          <div class="tw-card-meta">${meta}</div>
           <div class="score-bar"><div class="score-bar-fill" style="width:${barPct}%;background:${barCol};animation-delay:${Math.min(i*.04,.5)}s"></div></div>
         </div>
         <div class="tw-card-score ${t.compound>.0?'sc-pos':t.compound<0?'sc-neg':'sc-neu'}">${sc}${t.compound.toFixed(3)}</div>
@@ -867,7 +937,7 @@
     activeFilter = f;
     const filtered = f==='all' ? allTweets : allTweets.filter(t=>t.label===f);
     document.querySelectorAll('.fb').forEach(b => b.classList.toggle('on', b.textContent.trim().startsWith(f)));
-    document.querySelector('.tweet-ct').textContent = `${filtered.length} ${f==='all'?'total':f} tweets`;
+    document.querySelector('.tweet-ct').textContent = `${filtered.length} ${f==='all'?'total':f} ${SRC_LABEL[activeSource]}`;
     document.getElementById('tweetBody').innerHTML = rows(filtered);
   }
 

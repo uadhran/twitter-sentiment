@@ -16,6 +16,7 @@ import httpx
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
+from gnews import GNews
 from twikit import Client
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
@@ -48,6 +49,7 @@ MIN_REFRESH_SECONDS = 45
 
 TWITTERAPI_IO_KEY = os.getenv("TWITTERAPI_IO_KEY", "")
 TWITTERAPI_IO_BASE = "https://api.twitterapi.io"
+
 
 _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
@@ -163,6 +165,7 @@ def pb_save(summary: dict[str, Any], tweets: list[dict[str, Any]]) -> None:
                 "avg_compound": summary["avg_compound"],
                 "overall_sentiment": summary["overall_sentiment"],
                 "analyzed_at": summary["analyzed_at"],
+                "source": summary.get("source", ""),
             },
             timeout=PB_WRITE_TIMEOUT_SECONDS,
         )
@@ -454,6 +457,39 @@ def _normalize_twikit_tweet(tweet: Any) -> dict:
     }
 
 
+async def _fetch_raw_gnews(keyword: str, count: int) -> list[dict]:
+    """Fetch news articles from Google News RSS via the gnews library (no API key needed, English only)."""
+    loop = asyncio.get_event_loop()
+    gn = GNews(language="en", max_results=count)
+    articles = await loop.run_in_executor(None, gn.get_news, keyword)
+    logger.info("[gnews] requested %d, got %d articles", count, len(articles))
+    return articles
+
+
+def _normalize_gnews_article(raw: dict) -> dict:
+    """Map a gnews library article dict to our internal format."""
+    text = f"{raw.get('title', '')} {raw.get('description', '')}".strip()
+    cleaned = clean_tweet(text)
+    scores = analyzer.polarity_scores(cleaned)
+    label = classify(scores["compound"])
+    publisher = raw.get("publisher", {})
+    return {
+        "id": raw.get("url", ""),
+        "text": text,
+        "cleaned": cleaned,
+        "compound": round(scores["compound"], 4),
+        "positive": round(scores["pos"], 4),
+        "negative": round(scores["neg"], 4),
+        "neutral": round(scores["neu"], 4),
+        "label": label,
+        "created_at": raw.get("published date") or None,
+        "likes": 0,
+        "retweets": 0,
+        "source_name": publisher.get("title", "") if isinstance(publisher, dict) else str(publisher),
+        "url": raw.get("url", ""),
+    }
+
+
 def _build_response(keyword: str, results: list[dict], source: str) -> dict:
     sentiments = {"positive": 0, "negative": 0, "neutral": 0}
     compounds = []
@@ -479,8 +515,15 @@ def _build_response(keyword: str, results: list[dict], source: str) -> dict:
     return {"tweets": results, "summary": summary, "keyword": keyword}
 
 
-async def fetch_and_analyze(keyword: str, count: int) -> dict:
-    """Hybrid: TwitterAPI.io when key is set (with graceful 429 stop), else Twikit."""
+async def fetch_and_analyze(keyword: str, count: int, source: str = "twitter") -> dict:
+    """Fetch and analyze content. source='twitter' uses TwitterAPI.io/Twikit; source='news' uses Google News RSS."""
+    if source == "news":
+        raw = await _fetch_raw_gnews(keyword, count)
+        results = [_normalize_gnews_article(a) for a in raw]
+        logger.info("[fetch] GNews: %d articles", len(results))
+        return _build_response(keyword, results, "google-news")
+
+    # Twitter path: TwitterAPI.io with Twikit fallback
     if TWITTERAPI_IO_KEY:
         try:
             raw = await _fetch_raw_twitterapi_io(keyword, count)
@@ -488,7 +531,7 @@ async def fetch_and_analyze(keyword: str, count: int) -> dict:
             logger.info("[fetch] TwitterAPI.io: %d tweets", len(results))
             return _build_response(keyword, results, "twitterapi.io")
         except Exception as e:
-            logger.warning("[fetch] TwitterAPI.io failed on first request: %s — falling back to Twikit", e)
+            logger.warning("[fetch] TwitterAPI.io failed: %s — falling back to Twikit", e)
 
     raw = await _fetch_raw_twikit(keyword, count)
     logger.info("[fetch] Twikit: %d / %d tweets", len(raw), count)
@@ -502,6 +545,10 @@ async def fetch_and_analyze(keyword: str, count: int) -> dict:
 def analyze():
     data = request.get_json(silent=True) or {}
     keyword = data.get("keyword", "").strip()
+    source = data.get("source", "twitter")
+    if source not in ("twitter", "news"):
+        return jsonify({"error": "source must be 'twitter' or 'news'"}), 400
+
     try:
         count = parse_int(
             data.get("count", DEFAULT_TWEET_COUNT),
@@ -531,7 +578,7 @@ def analyze():
         cached = get_cached(keyword, count)
         if cached:
             return jsonify({**cached, "cached": True})
-        result = asyncio.run(fetch_and_analyze(keyword, count))
+        result = asyncio.run(fetch_and_analyze(keyword, count, source))
     except ValueError as e:
         logger.warning("[analyze] Validation error for keyword=%r: %s", keyword, e)
         return jsonify({"error": str(e)}), 400
@@ -540,7 +587,8 @@ def analyze():
         return jsonify({"error": "Failed to fetch tweets. Please try again."}), 502
 
     if not result["tweets"]:
-        return jsonify({"error": "No tweets found for this keyword."}), 404
+        label = "articles" if source == "news" else "tweets"
+        return jsonify({"error": f"No {label} found for this keyword."}), 404
 
     set_cached(keyword, count, result)
     Thread(target=pb_save, args=(result["summary"], result["tweets"]), daemon=False).start()
