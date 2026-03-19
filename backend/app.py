@@ -97,6 +97,11 @@ def index():
     return send_from_directory(str(_FRONTEND_DIR), "index.html")
 
 
+@app.route("/style.css")
+def shared_css():
+    return send_from_directory(str(_FRONTEND_DIR), "style.css")
+
+
 # ── PocketBase auth ───────────────────────────────────────────────────────────
 
 
@@ -538,6 +543,23 @@ async def fetch_and_analyze(keyword: str, count: int, source: str = "twitter") -
     return _build_response(keyword, [_normalize_twikit_tweet(t) for t in raw], "twikit")
 
 
+_globe_cache: dict[str, tuple[float, dict]] = {}
+GLOBE_CACHE_TTL = 300  # 5 minutes
+
+
+async def fetch_globe_news(country: str) -> dict:
+    """Fetch top news for a country (or global if country='world') and score sentiment."""
+    loop = asyncio.get_event_loop()
+    if country == "world":
+        gn = GNews(language="en", max_results=20)
+    else:
+        gn = GNews(language="en", country=country.upper(), max_results=20)
+    articles = await loop.run_in_executor(None, gn.get_top_news)
+    results = [_normalize_gnews_article(a) for a in articles]
+    logger.info("[globe] %s: %d articles", country.upper(), len(results))
+    return _build_response(country.upper(), results, "google-news")
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 
@@ -593,6 +615,37 @@ def analyze():
     set_cached(keyword, count, result)
     Thread(target=pb_save, args=(result["summary"], result["tweets"]), daemon=False).start()
 
+    return jsonify(result)
+
+
+@app.route("/globe")
+def globe_page():
+    return send_from_directory(str(_FRONTEND_DIR), "globe.html")
+
+
+@app.route("/api/globe", methods=["GET"])
+def globe_news():
+    country = request.args.get("country", "world").lower().strip()
+    if country != "world" and not re.match(r"^[a-z]{2}$", country):
+        return jsonify({"error": "Invalid country code"}), 400
+    client_key = (
+        request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+    ).split(",")[0].strip()
+    if is_rate_limited(client_key):
+        return jsonify({"error": "Too many requests"}), 429
+    now = time.time()
+    if country in _globe_cache:
+        ts, data = _globe_cache[country]
+        if now - ts < GLOBE_CACHE_TTL:
+            return jsonify({**data, "cached": True})
+    try:
+        result = asyncio.run(fetch_globe_news(country))
+    except Exception:
+        logger.exception("[globe] Error for country=%r", country)
+        return jsonify({"error": "Failed to fetch news"}), 502
+    if not result["tweets"]:
+        return jsonify({"error": "No news found for this country"}), 404
+    _globe_cache[country] = (now, result)
     return jsonify(result)
 
 

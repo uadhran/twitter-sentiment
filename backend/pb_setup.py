@@ -41,6 +41,30 @@ def create_collection(token, schema):
         print(f"  ✗ Failed to create '{name}': {r.text}")
 
 
+def add_field_if_missing(token, collection_name, field):
+    """Add a field to an existing collection if it doesn't already exist."""
+    headers = {"Authorization": token}
+    r = httpx.get(f"{PB_URL}/api/collections/{collection_name}", headers=headers)
+    if r.status_code != 200:
+        print(f"  ✗ Collection '{collection_name}' not found")
+        return
+    col = r.json()
+    existing_names = {f["name"] for f in col.get("fields", [])}
+    if field["name"] in existing_names:
+        print(f"  ✓ Field '{field['name']}' already exists in '{collection_name}' — skipping")
+        return
+    col["fields"].append(field)
+    r = httpx.patch(
+        f"{PB_URL}/api/collections/{col['id']}",
+        headers=headers,
+        json={"fields": col["fields"]},
+    )
+    if r.status_code == 200:
+        print(f"  ✓ Added field '{field['name']}' to '{collection_name}'")
+    else:
+        print(f"  ✗ Failed to add field '{field['name']}': {r.text}")
+
+
 def main():
     print(f"\nConnecting to PocketBase at {PB_URL}...")
     token = get_token()
@@ -69,6 +93,7 @@ def main():
                 {"name": "avg_compound", "type": "number"},
                 {"name": "overall_sentiment", "type": "text"},
                 {"name": "analyzed_at", "type": "text"},
+                {"name": "source", "type": "text"},
             ],
         },
     )
@@ -99,6 +124,9 @@ def main():
             ],
         },
     )
+
+    print("\nPatching existing collections with new fields...")
+    add_field_if_missing(token, "analyses", {"name": "source", "type": "text"})
 
     print("\n✅ PocketBase setup complete!")
     print(f"   Dashboard: {PB_URL}/_/")

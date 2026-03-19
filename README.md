@@ -1,214 +1,261 @@
-# PulseCheck — Twitter Keyword Sentiment Analyzer
+# PulseCheck
 
-A web dashboard that fetches recent tweets for any keyword using **twikit** (no API key needed) and scores them using **VADER** sentiment analysis. Results are optionally persisted to **PocketBase** for history tracking.
+> Real-time keyword sentiment analysis powered by Twitter/X, Google News, and VADER NLP — with a live global news globe.
 
-![PulseCheck Dashboard](https://img.shields.io/badge/status-working-brightgreen) ![Python](https://img.shields.io/badge/python-3.12-blue) ![Flask](https://img.shields.io/badge/flask-3.0-lightgrey) ![PocketBase](https://img.shields.io/badge/pocketbase-0.36-orange)
-
----
-
-## ✨ Features
-
-- 🔍 **Keyword search** — fetch up to 40 recent tweets per query
-- 🧠 **VADER sentiment scoring** — positive / negative / neutral with compound score
-- 🌐 **Non-English detection** — flags tweets where VADER may be inaccurate
-- 🔗 **Clickable tweet links** — every tweet links directly to the original on X
-- 📊 **Sentiment distribution bar** — visual breakdown at a glance
-- 🗂️ **PocketBase history** — every analysis saved, browsable in the sidebar
-- 📰 **Editorial UI** — clean newspaper-style dashboard, no build step needed
+![Python](https://img.shields.io/badge/python-3.12-blue?style=flat-square)
+![Flask](https://img.shields.io/badge/flask-3.0-lightgrey?style=flat-square)
+![PocketBase](https://img.shields.io/badge/pocketbase-0.36-orange?style=flat-square)
+![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 
 ---
 
-## 📁 Project Structure
+## Screenshots
+
+<!-- Drop your screenshots here -->
+| Main Dashboard | Globe View |
+|---|---|
+| _screenshot coming soon_ | _screenshot coming soon_ |
+
+---
+
+## What it does
+
+PulseCheck has two pages:
+
+**`/` — Sentiment Analyzer**
+Type any keyword, hashtag, or phrase. PulseCheck fetches recent tweets or Google News headlines and scores each one using VADER NLP — returning a live sentiment verdict (Positive / Negative / Neutral), compound score, word cloud, score distribution chart, and per-item cards with animated score bars.
+
+**`/globe` — World News Globe**
+A rotating 3D globe (globe.gl) showing live Google News sentiment by country. Click any country to see regional headlines. The right panel auto-scrolls through articles and appends new ones as they arrive — no duplicates. Drag the divider to resize the panel.
+
+---
+
+## Features
+
+### Analyzer (`/`)
+- **Dual source toggle** — switch between Twitter/X and Google News (English) per search
+- **Hybrid Twitter fetcher** — TwitterAPI.io primary, twikit scraping fallback (no official API key needed for fallback)
+- **VADER NLP** — compound score, positive/negative/neutral per item
+- **Animated verdict** — typewriter word, breathing compound meter, particle effects
+- **Chart/meter toggle** — switch between the needle gauge and a bar chart
+- **Word cloud** — positive and negative word clouds side by side
+- **Score bars** — animated fill bar on every tweet/article card
+- **Heat-tint cards** — card background tinted by compound intensity
+- **History sidebar** — full PocketBase-backed history with per-record delete
+- **Heatmap calendar** — GitHub-style activity heatmap from saved analyses
+- **Recent chips** — last 8 searches, source-aware (GNews chip re-opens as GNews)
+- **Cooldown bar** — prevents hammering the same keyword
+- **Toast notifications** — non-blocking error and success messages
+- **Dark / light theme** — persisted in localStorage
+
+### Globe (`/globe`)
+- **Rotating globe** — auto-rotates when idle, pauses on interaction
+- **Country points** — colored green/red/amber after sentiment fetch
+- **Country click** → live regional Google News headlines with mini verdict
+- **Global news feed** — auto-scrolling article list, pauses on hover
+- **Append-only dedup** — only new unseen articles are added; no repeats
+- **Fetch skeleton** — shimmer card animation while loading next batch
+- **Resizable panel** — drag the divider, globe redraws in real time
+- **Reset button** — return to global rotating view from any country
+- **News ticker** — scrolling horizontal headline strip
+
+### Shared
+- **PocketBase persistence** — analyses tagged with `source` field (twitter / google-news)
+- **In-memory cache** — per-keyword result cache, configurable TTL
+- **Rate limiting** — per-IP, per-keyword cooldown on the backend
+- **Single shared CSS** — `style.css` with design tokens used by both pages
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | [Flask](https://flask.palletsprojects.com/) 3.0 + httpx |
+| Twitter (primary) | [TwitterAPI.io](https://twitterapi.io) — paid, higher limits |
+| Twitter (fallback) | [twikit](https://github.com/d60/twikit) — cookie-based scraping, free |
+| News source | [GNews](https://github.com/ranahaani/GNews) — Google News RSS, no key needed |
+| NLP | [VADER](https://github.com/cjhutto/vaderSentiment) — social-media-tuned sentiment |
+| Database | [PocketBase](https://pocketbase.io/) — single-binary SQLite backend |
+| Globe | [globe.gl](https://globe.gl/) — WebGL 3D globe |
+| Frontend | Vanilla HTML / CSS / JS — no build step, no framework |
+| Fonts | Cormorant Garamond + JetBrains Mono (Google Fonts) |
+
+---
+
+## Project Structure
 
 ```
-twitter-sentiment/
+pulsecheck/
 ├── backend/
-│   ├── app.py              # Flask API server (twikit + VADER + PocketBase)
-│   ├── pb_setup.py         # One-time PocketBase collection setup script
-│   ├── requirements.txt    # Python dependencies
-│   ├── .env.example        # Environment variable template
-│   ├── .env                # Your credentials (never commit!)
-│   ├── cookies.json        # Exported from browser via Cookie-Editor
-│   └── cookies_twikit.json # Auto-generated converted format
-└── frontend/
-    └── index.html          # Dashboard (open directly in browser, no build)
+│   ├── app.py              # Flask server — all routes and logic
+│   ├── pb_setup.py         # One-time PocketBase collection setup
+│   └── requirements.txt
+├── frontend/
+│   ├── index.html          # Sentiment analyzer dashboard
+│   ├── globe.html          # World news globe
+│   └── style.css           # Shared design tokens and base styles
+├── pb_migrations/          # PocketBase schema migrations
+└── pb_data/                # PocketBase database (do not commit)
 ```
 
 ---
 
-## ⚙️ Setup
+## Setup
 
-### 1. Install dependencies
+### 1. Clone and install
 
 ```bash
-cd backend
-pip install -r requirements.txt
+git clone https://github.com/yourname/pulsecheck.git
+cd pulsecheck
+pip install -r backend/requirements.txt
 ```
 
----
+### 2. Configure environment
 
-### 2. Get Twitter cookies (no API key needed)
-
-twikit uses your regular Twitter/X login session — no developer account required.
-
-1. Log in to [x.com](https://x.com) in your browser
-2. Install the **Cookie-Editor** extension:
-   - [Chrome](https://chrome.google.com/webstore/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm)
-   - [Firefox](https://addons.mozilla.org/en-US/firefox/addon/cookie-editor/)
-3. On x.com, click the extension → **Export** → **Export as JSON**
-4. Save the file as `backend/cookies.json`
-
-> ⚠️ Your `cookies.json` contains your session token — never share it or commit it to git.
-
----
-
-### 3. Configure `.env`
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env`:
+Create `backend/.env`:
 
 ```env
-# Path to your exported cookies file
-COOKIES_FILE=cookies.json
+# Twitter — one or both
+TWITTERAPI_IO_KEY=your_key_here          # optional but preferred
+COOKIES_FILE=cookies.json                # for twikit fallback
 
-# PocketBase (optional — for history saving)
+# PocketBase
 POCKETBASE_URL=http://127.0.0.1:8090
-POCKETBASE_EMAIL=your_superuser@email.com
-POCKETBASE_PASSWORD=your_superuser_password
+POCKETBASE_EMAIL=admin@example.com
+POCKETBASE_PASSWORD=yourpassword
+
+# Server
+PORT=5000
+FLASK_DEBUG=false
 ```
 
----
+### 3. Twitter cookies (twikit fallback)
 
-### 4. (Optional) Set up PocketBase for history
+If you don't have a TwitterAPI.io key, twikit uses your browser session — no developer account needed.
 
-PocketBase is a single-file open source backend that saves all your analyses.
+1. Log in to [x.com](https://x.com) in Chrome or Firefox
+2. Install [Cookie-Editor](https://cookie-editor.com/)
+3. On x.com → open Cookie-Editor → **Export as JSON**
+4. Save as `backend/cookies.json`
+
+> Your `cookies.json` contains your session token. Never commit it or share it.
+
+### 4. Start PocketBase
 
 ```bash
-# Download PocketBase for Linux x64
+# Download (Linux x64 example)
 wget https://github.com/pocketbase/pocketbase/releases/download/v0.36.5/pocketbase_0.36.5_linux_amd64.zip
 unzip pocketbase_0.36.5_linux_amd64.zip
 
-# Start PocketBase
+# Start
 ./pocketbase serve
 
 # Visit http://127.0.0.1:8090/_/ and create your superuser account
-# Then add credentials to your .env file and run the setup script:
-
-cd backend
-python pb_setup.py
+# Then run the setup script once:
+python backend/pb_setup.py
 ```
 
-This creates two collections automatically:
-- **`analyses`** — keyword, sentiment summary, percentages, timestamp
-- **`tweets`** — individual tweets linked to each analysis
+PocketBase is optional — the app works without it, history just won't be saved.
 
-> PocketBase is completely optional. If not running, the app works normally — history just won't be saved.
-
----
-
-### 5. Run the backend
+### 5. Run
 
 ```bash
-cd backend
-python app.py
-# or with uv:
-uv run python3 -u app.py
+python backend/app.py
 ```
 
-Server starts at `http://localhost:5000`
-
-On first run, `cookies.json` is auto-converted to `cookies_twikit.json` (twikit's format).
+Open [http://localhost:5000](http://localhost:5000) for the analyzer, [http://localhost:5000/globe](http://localhost:5000/globe) for the globe.
 
 ---
 
-### 6. Open the dashboard
+## API Endpoints
 
-Open `frontend/index.html` directly in your browser:
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/analyze` | Fetch and score tweets or news articles |
+| `GET` | `/api/history` | List saved analyses from PocketBase |
+| `DELETE` | `/api/history/:id` | Delete a single analysis |
+| `GET` | `/api/globe?country=us` | Regional news + sentiment for a country code |
+| `GET` | `/api/globe?country=world` | Global top headlines |
+| `GET` | `/api/health` | Backend + PocketBase health check |
 
+**POST `/api/analyze` body:**
+```json
+{
+  "keyword": "climate",
+  "count": 20,
+  "source": "twitter"
+}
 ```
-file:///home/youruser/twitter-sentiment/frontend/index.html
-```
-
-No build step, no npm, no bundler needed.
-
-**API base config for deployment:**  
-If you host the frontend and backend on the same domain, the UI will call the same-origin `/api` automatically.  
-If your backend runs elsewhere, set a custom base URL on the `<body>` tag:
-
-```html
-<body data-api-base="https://your-backend.example.com">
-```
+`source` is `"twitter"` or `"news"`. `count` is 10–100.
 
 ---
 
-## 🚀 Usage
+## How VADER scoring works
 
-1. Start PocketBase (optional): `./pocketbase serve`
-2. Start Flask: `python backend/app.py`
-3. Open `frontend/index.html`
-4. Type any keyword, hashtag, or phrase and press **Analyze →**
-5. Results show:
-   - **Verdict banner** — overall sentiment + compound score
-   - **Distribution bar** — visual positive/negative/neutral split
-   - **Tweet table** — per-tweet labels, scores, engagement, timestamps
-   - **Clickable timestamps** — links to original tweet on X
-   - **Non-English warnings** — flagged rows where scoring may be unreliable
-   - **Sidebar history** — past analyses from PocketBase, click to re-run
+| Compound score | Label |
+|---|---|
+| ≥ +0.05 | Positive |
+| ≤ −0.05 | Negative |
+| Between | Neutral |
+
+VADER is tuned for social media — it handles slang, caps, punctuation, and emoji. The compound score runs from **−1.0** (most negative) to **+1.0** (most positive).
+
+> **English only.** VADER scores non-English text near 0.0 regardless of actual sentiment. For multilingual support, consider `cardiffnlp/twitter-xlm-roberta-base-sentiment`.
 
 ---
 
-## 🧠 How VADER Scoring Works
+## Known Limitations
 
-VADER (Valence Aware Dictionary and sEntiment Reasoner) is specifically tuned for social media text.
-
-| Compound Score | Classification |
-|----------------|----------------|
-| ≥ +0.05        | Positive ✅    |
-| ≤ −0.05        | Negative ❌    |
-| Between        | Neutral ➡️     |
-
-The compound score ranges from **−1.0** (most negative) to **+1.0** (most positive).
-
-> **Non-English limitation:** VADER is trained on English text only. Tweets in Hindi, Malayalam, Arabic, CJK scripts etc. will typically score near 0.000 (neutral) even if they carry strong sentiment. These are automatically flagged with a `🌐 non-english · VADER may be inaccurate` badge. For multilingual support, consider `cardiffnlp/twitter-xlm-roberta-base-sentiment`.
+- **twikit** returns ~20–40 tweets per search (one page of Twitter's internal API). Cookie sessions expire — re-export from browser when they do.
+- **GNews** is English only and scrapes Google News RSS. Results depend on what Google surfaces.
+- **VADER** is English-only — non-English tweets will score near neutral.
+- **Globe sentiment** is based on English news headlines for each country, not native-language sources.
 
 ---
 
-## 🛠️ Tech Stack
+## Security
 
-| Layer     | Technology |
-|-----------|-----------|
-| Scraping  | [twikit](https://github.com/d60/twikit) — no API key, uses browser cookies |
-| NLP       | [VADER](https://github.com/cjhutto/vaderSentiment) — fast, social-media-tuned |
-| Backend   | [Flask](https://flask.palletsprojects.com/) + httpx |
-| Database  | [PocketBase](https://pocketbase.io/) — single-file SQLite backend |
-| Frontend  | Vanilla HTML/CSS/JS — no framework, no build step |
-| Fonts     | Playfair Display + DM Sans + DM Mono (Google Fonts) |
-
----
-
-## 🔒 Security Notes
-
-Add these to your `.gitignore`:
+Add to `.gitignore`:
 
 ```
 backend/.env
 backend/cookies.json
 backend/cookies_twikit.json
-pocketbase/pb_data/
+pb_data/
 ```
 
-- **Never share your `cookies.json`** — it contains your Twitter session token
-- **Regenerate your session** (log out + back in) if you accidentally expose it
-- PocketBase `pb_data/` contains your database — back it up, don't commit it
+Never expose `cookies.json` — it holds your Twitter session. Regenerate by logging out and back in if leaked.
 
 ---
 
-## 📌 Known Limitations
+## Possible next additions
 
-- twikit returns ~20–40 tweets per search (one page of Twitter's internal API)
-- Rate limits apply — avoid running many searches in rapid succession
-- Cookie sessions expire periodically — re-export from browser when they do
-- VADER is English-only — non-English tweets are flagged but scores are unreliable
+- [ ] Keyword comparison — sentiment of two keywords side by side
+- [ ] Trend chart — compound score over time from history data
+- [ ] Export — download results as CSV or PNG
+- [ ] Multilingual sentiment — swap VADER for a multilingual model
+- [ ] Deploy guide — Railway / Render / VPS one-click setup
+
+---
+
+## Credits
+
+PulseCheck is built on the shoulders of these open-source projects and services:
+
+| Project | What it does here |
+|---|---|
+| [twikit](https://github.com/d60/twikit) by [@d60](https://github.com/d60) | Cookie-based Twitter scraping — no official API key needed |
+| [VADER Sentiment](https://github.com/cjhutto/vaderSentiment) by C.J. Hutto & E. Gilbert | NLP engine that scores every tweet and headline |
+| [GNews](https://github.com/ranahaani/GNews) by [@ranahaani](https://github.com/ranahaani) | Google News RSS fetching — powers the news source toggle and the globe |
+| [globe.gl](https://github.com/vasturiano/globe.gl) by [@vasturiano](https://github.com/vasturiano) | WebGL 3D globe rendering in the `/globe` page |
+| [PocketBase](https://github.com/pocketbase/pocketbase) | Single-binary SQLite backend for analysis history |
+| [Flask](https://github.com/pallets/flask) | Python web framework powering the API |
+| [Cormorant Garamond](https://fonts.google.com/specimen/Cormorant+Garamond) | Editorial serif typeface |
+| [JetBrains Mono](https://www.jetbrains.com/lp/mono/) | Monospace font used throughout the UI |
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

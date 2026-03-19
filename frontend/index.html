@@ -8,59 +8,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg:       #09080B;
-      --surf:     #100F14;
-      --surf2:    #1A1820;
-      --bord:     #2E2B38;
-      --bord2:    #3D3A4A;
-      --text:     #EAE6F2;
-      --text2:    #B4ACCA;
-      --muted:    #68627A;
-      --pos:      #22C55E;
-      --pos-bg:   rgba(34,197,94,0.10);
-      --pos-bord: rgba(34,197,94,0.30);
-      --neg:      #EF4444;
-      --neg-bg:   rgba(239,68,68,0.10);
-      --neg-bord: rgba(239,68,68,0.30);
-      --neu:      #F59E0B;
-      --neu-bg:   rgba(245,158,11,0.10);
-      --neu-bord: rgba(245,158,11,0.30);
-      --acc:      #A78BFA;
-      --acc2:     #7C3AED;
-    }
-    [data-theme="light"] {
-      --bg:       #F2EFF8;
-      --surf:     #FFFFFF;
-      --surf2:    #EAE5F5;
-      --bord:     #D4CDE8;
-      --bord2:    #C0B8D8;
-      --text:     #18142A;
-      --text2:    #3C3554;
-      --muted:    #7A7090;
-      --pos:      #16A34A;
-      --pos-bg:   rgba(22,163,74,0.08);
-      --pos-bord: rgba(22,163,74,0.35);
-      --neg:      #DC2626;
-      --neg-bg:   rgba(220,38,38,0.08);
-      --neg-bord: rgba(220,38,38,0.35);
-      --neu:      #D97706;
-      --neu-bg:   rgba(217,119,6,0.08);
-      --neu-bord: rgba(217,119,6,0.35);
-      --acc:      #7C3AED;
-      --acc2:     #A78BFA;
-    }
-
     html { scroll-behavior: smooth; }
     body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      font-weight: 300;
       line-height: 1.6;
       min-height: 100vh;
     }
@@ -119,6 +70,42 @@
       font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
       color: var(--muted); text-align: center;
     }
+
+    /* ── TICKER ── */
+    .ticker-wrap { border-bottom: 1px solid var(--bord); background: var(--surf); overflow: hidden; height: 28px; display: none; }
+    .ticker-track { display: flex; align-items: center; height: 100%; width: max-content; animation: ticker-scroll 40s linear infinite; white-space: nowrap; }
+    .ticker-track:hover { animation-play-state: paused; }
+    @keyframes ticker-scroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
+    .tick-item { display: inline-flex; align-items: center; gap: 6px; padding: 0 20px; font-size: 9px; letter-spacing: 1px; }
+    .tick-kw { color: var(--text2); font-weight: 400; }
+    .tick-v { font-size: 9px; }
+    .tick-v.positive { color: var(--pos); }
+    .tick-v.negative { color: var(--neg); }
+    .tick-v.neutral  { color: var(--neu); }
+    .tick-sep { color: var(--bord2); padding: 0 8px; font-size: 10px; }
+
+    /* ── WORD CLOUD ── */
+    .wcloud-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .wcloud-col { background: var(--surf); border: 1px solid var(--bord); border-radius: 2px; padding: 14px; min-height: 100px; }
+    .wcloud-lbl { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; }
+    .wcloud-lbl.pos { color: var(--pos); }
+    .wcloud-lbl.neg { color: var(--neg); }
+    .wcloud-words { line-height: 1.9; }
+    .wc-word { display: inline-block; margin: 1px 3px; cursor: default; font-family: 'JetBrains Mono', monospace; font-weight: 300; transition: opacity .15s; }
+    .wc-word.positive { color: var(--pos); }
+    .wc-word.negative { color: var(--neg); }
+    .wc-word:hover { opacity: 1 !important; }
+
+    /* ── HEATMAP ── */
+    .hmap-wrap { margin-top: 20px; }
+    .hmap-grid { display: flex; gap: 3px; }
+    .hmap-dow { display: flex; flex-direction: column; gap: 2px; margin-right: 2px; }
+    .hmap-dow div { width: 9px; height: 9px; font-size: 7px; color: var(--muted); line-height: 9px; text-align: center; }
+    .hmap-weeks { display: flex; gap: 2px; overflow-x: auto; }
+    .hmap-week { display: flex; flex-direction: column; gap: 2px; }
+    .hmap-cell { width: 9px; height: 9px; border-radius: 1px; background: var(--surf2); cursor: default; transition: transform .1s; }
+    .hmap-cell:hover { transform: scale(1.4); z-index: 2; }
+    .hmap-cell.empty { background: transparent; }
 
     /* ── LAYOUT ── */
     .page {
@@ -432,12 +419,14 @@
   <div class="hdr-main">
     <a class="brand" href="/">Pulse<em>Check</em></a>
     <div class="hdr-right">
+      <a href="/globe" style="font-size:10px;letter-spacing:1px;color:var(--acc);text-decoration:none;border:1px solid var(--acc2);padding:4px 12px;border-radius:2px;transition:background .15s" onmouseover="this.style.background='rgba(167,139,250,.08)'" onmouseout="this.style.background=''">🌍 Globe</a>
       <div class="live-pill"><div class="live-dot"></div>Live</div>
       <span class="hdr-date" id="hdrDate"></span>
       <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle theme">◐</button>
     </div>
   </div>
   <div class="hdr-sub" id="hdrSub">Real-time sentiment intelligence · VADER NLP · Twitter / X</div>
+  <div class="ticker-wrap" id="tickerWrap"><div class="ticker-track" id="tickerTrack"></div></div>
 </header>
 
 <div class="page">
@@ -492,6 +481,11 @@
     <div class="sb-sec">
       <div class="sb-head">Recent Analyses</div>
       <div id="historyList"><div class="hi-empty">Run your first analysis<br>to see history here.</div></div>
+    </div>
+    <div class="sb-sec">
+      <div class="sb-head">Activity Heatmap</div>
+      <div class="hmap-wrap" id="heatmapWrap" style="display:none"></div>
+      <div id="heatmapEmpty" style="font-size:10px;color:var(--muted)">No history yet.</div>
     </div>
   </aside>
 </div>
@@ -552,27 +546,37 @@
   });
 
   // ── Recent searches (sessionStorage) ──
+  // Stored as [{kw, src}] objects; old plain-string entries are normalized on read.
   function getRecents() {
-    try { return JSON.parse(sessionStorage.getItem('pc-recents') || '[]'); } catch(_) { return []; }
+    try {
+      return (JSON.parse(sessionStorage.getItem('pc-recents') || '[]')).map(
+        item => typeof item === 'string' ? { kw: item, src: 'twitter' } : item
+      );
+    } catch(_) { return []; }
   }
-  function addToRecent(kw) {
-    const list = getRecents().filter(k => k.toLowerCase() !== kw.toLowerCase());
-    list.unshift(kw);
+  function addToRecent(kw, src) {
+    const list = getRecents().filter(item => item.kw.toLowerCase() !== kw.toLowerCase());
+    list.unshift({ kw, src: src || 'twitter' });
     sessionStorage.setItem('pc-recents', JSON.stringify(list.slice(0, 8)));
     renderRecents();
   }
   function removeFromRecent(kw) {
-    sessionStorage.setItem('pc-recents', JSON.stringify(getRecents().filter(k => k.toLowerCase() !== kw.toLowerCase())));
+    sessionStorage.setItem('pc-recents', JSON.stringify(getRecents().filter(item => item.kw.toLowerCase() !== kw.toLowerCase())));
     renderRecents();
   }
   function renderRecents() {
     const el = document.getElementById('recents');
     const list = getRecents();
     el.textContent = '';
-    list.forEach(kw => {
+    list.forEach(({ kw, src }) => {
       const chip = document.createElement('span');
       chip.className = 'recent-chip';
-      chip.addEventListener('click', e => { if (e.target.classList.contains('recent-chip-x')) return; document.getElementById('keyword').value = kw; analyze(true); });
+      chip.addEventListener('click', e => {
+        if (e.target.classList.contains('recent-chip-x')) return;
+        document.getElementById('keyword').value = kw;
+        setSource(src || 'twitter');
+        analyze(true);
+      });
       const label = document.createTextNode(`#${kw}`);
       const x = document.createElement('span');
       x.className = 'recent-chip-x'; x.textContent = '×'; x.title = 'Remove';
@@ -611,9 +615,105 @@
     cooldownTimer = setInterval(tick, 1000);
   }
 
+  // ── Ticker ──
+  function buildTicker(items) {
+    const wrap = document.getElementById('tickerWrap');
+    const track = document.getElementById('tickerTrack');
+    if (!items || !items.length) { wrap.style.display = 'none'; return; }
+    const icons = { positive:'▲', negative:'▼', neutral:'◌' };
+    const html = items.map(it => {
+      const s = ss(it.overall_sentiment);
+      return `<span class="tick-item"><span class="tick-kw">#${esc(it.keyword||'')}</span> <span class="tick-v ${s}">${icons[s]} ${it.positive_pct||0}% pos</span></span><span class="tick-sep">·</span>`;
+    }).join('');
+    track.innerHTML = html + html; // duplicate for seamless loop
+    wrap.style.display = 'block';
+    track.style.animationDuration = `${Math.max(20, items.length * 5)}s`;
+  }
+
+  // ── Word Cloud ──
+  const STOPWORDS = new Set(['the','a','an','and','or','but','is','are','was','were','be','been','have','has','had','do','does','did','will','would','could','should','may','might','can','to','of','in','on','at','by','for','with','about','from','that','this','these','those','it','its','he','she','they','we','you','i','me','my','your','our','their','what','who','which','how','when','where','why','not','no','so','if','than','just','also','as','up','out','all','more','get','like','go','one','two','new','know','think','make','see','come','want','need','time','way','day','use','people','good','great','very','even','still','back','only','well','re','ve','ll','s','t','m','rt','amp','dont','cant','im','said','says','via','over','into','after','before','been','than','now','some','other','their','them','then','there','here','when','where','while','each','per','but']);
+  function wordCloud(tweets) {
+    const freq = { positive: {}, negative: {} };
+    tweets.forEach(t => {
+      if (t.label === 'neutral') return;
+      (t.cleaned || t.text || '').toLowerCase().split(/[\s\W]+/).forEach(w => {
+        if (w.length > 3 && !STOPWORDS.has(w) && /^[a-z]+$/.test(w))
+          freq[t.label][w] = (freq[t.label][w] || 0) + 1;
+      });
+    });
+    const render = (side) => {
+      const entries = Object.entries(freq[side]).sort((a,b) => b[1]-a[1]).slice(0, 22);
+      if (!entries.length) return `<div style="color:var(--muted);font-size:10px;padding:8px 0">No ${side} words</div>`;
+      const max = entries[0][1];
+      return entries.map(([w,c]) => {
+        const size = (10 + (c / max) * 13).toFixed(1);
+        const op = (0.45 + (c / max) * 0.55).toFixed(2);
+        return `<span class="wc-word ${side}" style="font-size:${size}px;opacity:${op}">${esc(w)}</span>`;
+      }).join('');
+    };
+    return `<div class="sec-head"><span class="sec-lbl">Word Cloud</span><div class="sec-line"></div></div>
+    <div class="wcloud-wrap">
+      <div class="wcloud-col"><div class="wcloud-lbl pos">↑ Positive</div><div class="wcloud-words">${render('positive')}</div></div>
+      <div class="wcloud-col"><div class="wcloud-lbl neg">↓ Negative</div><div class="wcloud-words">${render('negative')}</div></div>
+    </div>`;
+  }
+
+  // ── Heatmap ──
+  function buildHeatmap(items) {
+    const wrap = document.getElementById('heatmapWrap');
+    const empty = document.getElementById('heatmapEmpty');
+    if (!items || !items.length) { wrap.style.display='none'; empty.style.display='block'; return; }
+    empty.style.display = 'none';
+    const byDate = {};
+    items.forEach(it => {
+      if (!it.analyzed_at) return;
+      const date = it.analyzed_at.substring(0, 10);
+      if (!byDate[date]) byDate[date] = { count: 0, sum: 0 };
+      byDate[date].count++;
+      byDate[date].sum += (it.avg_compound || 0);
+    });
+    // Build last 112 days (16 weeks)
+    const today = new Date();
+    const days = [];
+    for (let i = 111; i >= 0; i--) {
+      const d = new Date(today); d.setDate(d.getDate() - i);
+      const key = d.toISOString().substring(0, 10);
+      days.push({ date: key, dow: d.getDay(), data: byDate[key] || null });
+    }
+    // Group into weeks
+    const weeks = []; let week = [];
+    for (let i = 0; i < days[0].dow; i++) week.push(null); // pad start
+    days.forEach(d => { week.push(d); if (week.length === 7) { weeks.push(week); week = []; } });
+    if (week.length) { while (week.length < 7) week.push(null); weeks.push(week); }
+
+    const cellColor = d => {
+      if (!d || !d.data) return 'var(--surf2)';
+      const c = d.data.sum / d.data.count;
+      const a = Math.min(0.85, 0.2 + Math.abs(c) * 0.7).toFixed(2);
+      if (c >= 0.05)  return `rgba(34,197,94,${a})`;
+      if (c <= -0.05) return `rgba(239,68,68,${a})`;
+      return `rgba(245,158,11,${a})`;
+    };
+    const DOW = ['S','M','T','W','T','F','S'];
+    wrap.innerHTML = `<div class="hmap-grid">
+      <div class="hmap-dow">${DOW.map(d=>`<div>${d}</div>`).join('')}</div>
+      <div class="hmap-weeks">${weeks.map(wk=>`<div class="hmap-week">${wk.map(d => {
+        if (!d) return '<div class="hmap-cell empty"></div>';
+        const tip = d.data ? `${d.date} · ${d.data.count} run(s) · avg ${(d.data.sum/d.data.count)>0?'+':''}${(d.data.sum/d.data.count).toFixed(2)}` : d.date;
+        return `<div class="hmap-cell" style="background:${cellColor(d)}" title="${tip}"></div>`;
+      }).join('')}</div>`).join('')}</div>
+    </div>`;
+    wrap.style.display = 'block';
+  }
+
   // ── History ──
   async function loadHistory() {
-    try { renderHistory((await fetch(`${API}/api/history?limit=10`).then(r=>r.json())).history || []); }
+    try {
+      const hist = (await fetch(`${API}/api/history?limit=100`).then(r=>r.json())).history || [];
+      renderHistory(hist.slice(0, 10));
+      buildTicker(hist);
+      buildHeatmap(hist);
+    }
     catch(_) { renderHistory([]); }
   }
   function renderHistory(items) {
@@ -630,7 +730,8 @@
       vd.className = `hi-v ${vl}`;
       vd.textContent = `${vl} · ${(item.avg_compound||0)>0?'+':''}${item.avg_compound||0}`;
       const meta = document.createElement('div'); meta.className = 'hi-meta';
-      meta.textContent = `${item.total||0} tweets · ${fmt(item.analyzed_at)}`;
+      const srcLabel = item.source === 'google-news' ? 'articles' : 'tweets';
+      meta.textContent = `${item.total||0} ${srcLabel} · ${fmt(item.analyzed_at)}`;
       const bar = document.createElement('div'); bar.className = 'hi-bar';
       [['hb-p', item.positive_pct],['hb-n', item.negative_pct],['hb-e', item.neutral_pct]].forEach(([c,w]) => {
         const s = document.createElement('div'); s.className = c; s.style.width = `${clamp(w)}%`; bar.appendChild(s);
@@ -653,8 +754,13 @@
         } catch(_) { del.textContent = '×'; del.disabled = false; }
       });
 
-      // Click row to re-analyze (bypass client cooldown — backend returns cached if needed)
-      row.addEventListener('click', () => { document.getElementById('keyword').value = item.keyword||''; analyze(true); });
+      // Click row to re-analyze — restore source before analyzing
+      row.addEventListener('click', () => {
+        document.getElementById('keyword').value = item.keyword || '';
+        const src = item.source === 'google-news' ? 'news' : 'twitter';
+        setSource(src);
+        analyze(true);
+      });
       row.append(del, kw, vd, meta, bar);
       el.appendChild(row);
     });
@@ -692,7 +798,7 @@
       const cachedNote = data.cached ? ' · cached' : '';
       setStatus(`✦ Complete — ${data.summary.total} ${itemLabel} · ${new Date().toLocaleTimeString()}${cachedNote}`);
       showToast(`${data.summary.overall_sentiment.toUpperCase()} · ${data.summary.total} ${itemLabel} · #${keyword}`, data.cached ? 'info' : 'success', 3500);
-      addToRecent(keyword);
+      addToRecent(keyword, activeSource);
       loadHistory();
 
       // Start cooldown if fresh result
@@ -761,6 +867,7 @@
           <div class="dl"><div class="dl-dot" style="background:var(--neu)"></div>Neutral ${summary.neutral_pct}%</div>
         </div>
       </div>
+      ${wordCloud(allTweets)}
       <div class="sec-head"><span class="sec-lbl">${activeSource === 'news' ? 'Article Feed' : 'Tweet Feed'}</span><div class="sec-line"></div></div>
       <div class="tweet-ctrl">
         <div class="tweet-ct">${filtered.length} ${filter==='all'?'total':filter} ${SRC_LABEL[activeSource]}</div>

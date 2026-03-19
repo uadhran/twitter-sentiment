@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta http-equiv="X-Frame-Options" content="DENY"/>
+  <title>PulseCheck — World News Globe</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+
+    /* ── HEADER ── */
+    .hdr { border-bottom: 1px solid var(--bord); padding: 0 32px; background: var(--bg); display: flex; align-items: center; justify-content: space-between; height: 56px; flex-shrink: 0; position: relative; z-index: 10; }
+    .brand { font-family: 'Cormorant Garamond', serif; font-size: 28px; font-weight: 700; line-height: 1; color: var(--text); text-decoration: none; }
+    .hdr-center { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); }
+    .nav-link { font-size: 10px; letter-spacing: 1px; color: var(--acc); text-decoration: none; border: 1px solid var(--acc2); padding: 4px 12px; border-radius: 2px; transition: background .15s; }
+    .nav-link:hover { background: rgba(167,139,250,.08); }
+
+    /* ── LAYOUT ── */
+    .globe-layout { display: flex; height: calc(100vh - 56px); }
+
+    /* ── GLOBE SIDE ── */
+    .globe-side { flex: 1; position: relative; overflow: hidden; background: #050408; min-width: 0; }
+    #globeEl { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+    /* ── RESIZE HANDLE ── */
+    .resize-handle { width: 5px; flex-shrink: 0; background: var(--bord); cursor: col-resize; transition: background .15s; z-index: 5; }
+    .resize-handle:hover, .resize-handle.dragging { background: var(--acc); }
+    .globe-hint { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: rgba(167,139,250,0.5); pointer-events: none; white-space: nowrap; }
+
+    /* ── NEWS SIDE ── */
+    .news-side { width: 400px; min-width: 240px; max-width: 640px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Empty state */
+    .news-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 32px; text-align: center; }
+    .news-empty-globe { font-size: 48px; opacity: .15; animation: spin 20s linear infinite; display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .news-empty-t { font-family: 'Cormorant Garamond', serif; font-size: 20px; font-weight: 300; color: var(--text2); }
+    .news-empty-h { font-size: 10px; color: var(--muted); line-height: 1.8; }
+
+    /* Country header */
+    .country-hdr { padding: 16px 20px 12px; border-bottom: 1px solid var(--bord); flex-shrink: 0; }
+    .country-name { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+    .country-meta { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+
+    /* Verdict mini */
+    .verdict-mini { padding: 12px 20px; border-bottom: 1px solid var(--bord); flex-shrink: 0; display: flex; align-items: center; gap: 16px; }
+    .vm-word { font-family: 'Cormorant Garamond', serif; font-size: 26px; font-weight: 700; font-style: italic; }
+    .vm-word.positive { color: var(--pos); }
+    .vm-word.negative { color: var(--neg); }
+    .vm-word.neutral  { color: var(--neu); }
+    .vm-stats { display: flex; gap: 14px; }
+    .vm-stat { text-align: center; }
+    .vm-num { font-size: 13px; font-weight: 500; }
+    .vm-num.pos { color: var(--pos); }
+    .vm-num.neg { color: var(--neg); }
+    .vm-num.neu { color: var(--neu); }
+    .vm-lbl { font-size: 8px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-top: 1px; }
+    .vm-compound { font-size: 10px; color: var(--muted); margin-left: auto; }
+
+    /* Reset button */
+    .reset-btn { font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 1px; padding: 3px 10px; background: none; border: 1px solid var(--bord2); border-radius: 2px; color: var(--muted); cursor: pointer; transition: all .15s; white-space: nowrap; flex-shrink: 0; }
+    .reset-btn:hover { border-color: var(--acc); color: var(--acc); }
+
+    /* Global ticker panel (default state) */
+    .global-panel { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+    .global-hdr { padding: 14px 20px 10px; border-bottom: 1px solid var(--bord); flex-shrink: 0; }
+    .global-hdr-title { font-family: 'Cormorant Garamond', serif; font-size: 20px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+    .global-hdr-sub { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+    .global-articles { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+
+    /* News ticker */
+    .nticker-wrap { border-bottom: 1px solid var(--bord); overflow: hidden; height: 30px; flex-shrink: 0; background: var(--surf); display: flex; align-items: center; }
+    .nticker-track { display: flex; align-items: center; height: 100%; width: max-content; animation: nticker-scroll 35s linear infinite; white-space: nowrap; }
+    .nticker-track:hover { animation-play-state: paused; cursor: pointer; }
+    @keyframes nticker-scroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
+    .ntick-item { display: inline-flex; align-items: center; gap: 6px; padding: 0 16px; font-size: 10px; }
+    .ntick-sent { font-size: 9px; flex-shrink: 0; }
+    .ntick-sent.pos { color: var(--pos); }
+    .ntick-sent.neg { color: var(--neg); }
+    .ntick-sent.neu { color: var(--neu); }
+    .ntick-title { color: var(--text2); max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+    .ntick-sep { color: var(--bord2); padding: 0 4px; }
+
+    /* Article list */
+    .article-list { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+
+    /* Article cards */
+    @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+    .art-card { display: flex; align-items: flex-start; gap: 10px; background: var(--surf); border: 1px solid var(--bord); border-left-width: 3px; border-radius: 2px; padding: 10px 12px; animation: fadeUp .3s ease both; transition: border-color .2s; }
+    .art-card.positive { border-left-color: var(--pos); }
+    .art-card.negative { border-left-color: var(--neg); }
+    .art-card.neutral  { border-left-color: var(--neu); }
+    .art-card:hover { border-color: var(--bord2); border-left-color: inherit; }
+    .art-body { flex: 1; min-width: 0; }
+    .art-top { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; flex-wrap: wrap; }
+    .art-src { font-size: 9px; color: var(--muted); letter-spacing: .5px; }
+    .art-title { font-size: 11px; line-height: 1.55; color: var(--text2); margin-bottom: 5px; }
+    .art-meta { display: flex; align-items: center; gap: 8px; }
+    .art-link { font-size: 9px; color: var(--acc); text-decoration: none; border-bottom: 1px dotted var(--acc); transition: opacity .15s; }
+    .art-link:hover { opacity: .6; }
+    .art-score { font-size: 11px; font-weight: 500; flex-shrink: 0; padding-top: 2px; }
+    .art-score.sc-pos { color: var(--pos); }
+    .art-score.sc-neg { color: var(--neg); }
+    .art-score.sc-neu { color: var(--neu); }
+    /* Loading state */
+    .news-loading { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; }
+    .news-loading-t { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+
+    /* Skeleton fetch indicator */
+    @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+    .fetch-indicator { background: var(--surf); border: 1px solid var(--bord); border-left: 3px solid var(--bord2); border-radius: 2px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; animation: fadeUp .25s ease both; }
+    .skel-line { height: 9px; border-radius: 2px; background: linear-gradient(90deg, var(--surf2) 25%, var(--bord2) 50%, var(--surf2) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease infinite; }
+    .skel-line.w80 { width: 80%; }
+    .skel-line.w50 { width: 50%; animation-delay: .15s; }
+    .skel-line.w30 { width: 30%; height: 6px; animation-delay: .3s; }
+
+    /* Globe overlay pulse dot */
+    .globe-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; background: #050408; z-index: 5; }
+    .globe-loading-dots { display: flex; gap: 6px; }
+    .globe-loading-dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--acc); animation: dotPulse 1.2s ease-in-out infinite; }
+    .globe-loading-dots span:nth-child(2) { animation-delay: .2s; }
+    .globe-loading-dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes dotPulse { 0%,100%{opacity:.2;transform:scale(.8)} 50%{opacity:1;transform:scale(1)} }
+    .globe-loading-t { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+
+    @media (max-width: 768px) {
+      .globe-layout { flex-direction: column; height: auto; }
+      .resize-handle { width: 100%; height: 5px; cursor: row-resize; }
+      .news-side { width: 100% !important; min-width: unset; max-width: unset; height: 50vh; }
+      html, body { overflow: auto; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="hdr">
+  <a class="brand" href="/">Pulse<em>Check</em></a>
+  <div class="hdr-center">World News · Live Sentiment Globe</div>
+  <div class="hdr-right">
+    <a href="/" class="nav-link">← Twitter Analysis</a>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle theme">○</button>
+  </div>
+</header>
+
+<div class="globe-layout">
+  <!-- Globe -->
+  <div class="globe-side">
+    <div class="globe-loading" id="globeLoading">
+      <div class="globe-loading-dots"><span></span><span></span><span></span></div>
+      <div class="globe-loading-t">Fetching live headlines…</div>
+    </div>
+    <div id="globeEl"></div>
+    <div class="globe-hint">Rotate · Click a country for live news</div>
+  </div>
+
+  <!-- Resize handle -->
+  <div class="resize-handle" id="resizeHandle"></div>
+
+  <!-- News Panel -->
+  <div class="news-side" id="newsPanel">
+    <!-- Global default state -->
+    <div class="global-panel" id="globalPanel">
+      <div class="global-hdr">
+        <div class="global-hdr-title">🌍 World Headlines</div>
+        <div class="global-hdr-sub" id="globalMeta">Loading live news…</div>
+      </div>
+      <div class="nticker-wrap"><div class="nticker-track" id="ntickerTrack"></div></div>
+      <div class="global-articles" id="globalArticles"></div>
+    </div>
+
+    <!-- Country state -->
+    <div id="newsContent" style="display:none; flex-direction:column; flex:1; overflow:hidden;">
+      <div class="country-hdr" id="countryHdr" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+        <div>
+          <div class="country-name" id="countryName"></div>
+          <div class="country-meta" id="countryMeta"></div>
+        </div>
+        <button class="reset-btn" onclick="resetToGlobal()">⊕ World</button>
+      </div>
+      <div class="verdict-mini" id="verdictMini"></div>
+      <div class="nticker-wrap"><div class="nticker-track" id="countryTickerTrack"></div></div>
+      <div class="article-list" id="articleList"></div>
+    </div>
+
+    <!-- Loading -->
+    <div class="news-loading" id="newsLoading" style="display:none">
+      <div class="spin-ring"></div>
+      <div class="news-loading-t" id="newsLoadingT">Fetching news…</div>
+    </div>
+  </div>
+</div>
+
+<div id="toastShelf"></div>
+
+<script src="//unpkg.com/globe.gl"></script>
+<script>
+  const API = '';
+
+  // ── Theme ──
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    document.getElementById('themeBtn').textContent = t === 'dark' ? '○' : '◐';
+    localStorage.setItem('pc-theme', t);
+  }
+  function toggleTheme() {
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  }
+  applyTheme(localStorage.getItem('pc-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+
+  // ── Country data (50 countries with GNews codes) ──
+  const COUNTRIES = [
+    { name:'United States',  code:'us', lat:37.09,  lng:-95.71 },
+    { name:'United Kingdom', code:'gb', lat:55.37,  lng:-3.43  },
+    { name:'India',          code:'in', lat:20.59,  lng:78.96  },
+    { name:'China',          code:'cn', lat:35.86,  lng:104.19 },
+    { name:'Japan',          code:'jp', lat:36.20,  lng:138.25 },
+    { name:'Germany',        code:'de', lat:51.16,  lng:10.45  },
+    { name:'France',         code:'fr', lat:46.22,  lng:2.21   },
+    { name:'Brazil',         code:'br', lat:-14.23, lng:-51.92 },
+    { name:'Russia',         code:'ru', lat:61.52,  lng:105.31 },
+    { name:'Canada',         code:'ca', lat:56.13,  lng:-106.34},
+    { name:'Australia',      code:'au', lat:-25.27, lng:133.77 },
+    { name:'Mexico',         code:'mx', lat:23.63,  lng:-102.55},
+    { name:'South Korea',    code:'kr', lat:35.90,  lng:127.76 },
+    { name:'Italy',          code:'it', lat:41.87,  lng:12.56  },
+    { name:'Spain',          code:'es', lat:40.46,  lng:-3.74  },
+    { name:'Saudi Arabia',   code:'sa', lat:23.88,  lng:45.07  },
+    { name:'Argentina',      code:'ar', lat:-38.41, lng:-63.61 },
+    { name:'South Africa',   code:'za', lat:-30.55, lng:22.93  },
+    { name:'Indonesia',      code:'id', lat:-0.78,  lng:113.92 },
+    { name:'Turkey',         code:'tr', lat:38.96,  lng:35.24  },
+    { name:'Nigeria',        code:'ng', lat:9.08,   lng:8.67   },
+    { name:'Egypt',          code:'eg', lat:26.82,  lng:30.80  },
+    { name:'Pakistan',       code:'pk', lat:30.37,  lng:69.34  },
+    { name:'Ukraine',        code:'ua', lat:48.37,  lng:31.16  },
+    { name:'Poland',         code:'pl', lat:51.91,  lng:19.14  },
+    { name:'Netherlands',    code:'nl', lat:52.13,  lng:5.29   },
+    { name:'Singapore',      code:'sg', lat:1.35,   lng:103.81 },
+    { name:'Israel',         code:'il', lat:31.04,  lng:34.85  },
+    { name:'Sweden',         code:'se', lat:60.12,  lng:18.64  },
+    { name:'Switzerland',    code:'ch', lat:46.81,  lng:8.22   },
+    { name:'Portugal',       code:'pt', lat:39.39,  lng:-8.22  },
+    { name:'Belgium',        code:'be', lat:50.50,  lng:4.46   },
+    { name:'Thailand',       code:'th', lat:15.87,  lng:100.99 },
+    { name:'Malaysia',       code:'my', lat:4.21,   lng:101.97 },
+    { name:'Philippines',    code:'ph', lat:12.87,  lng:121.77 },
+    { name:'Bangladesh',     code:'bd', lat:23.68,  lng:90.35  },
+    { name:'Ethiopia',       code:'et', lat:9.14,   lng:40.48  },
+    { name:'Kenya',          code:'ke', lat:-0.02,  lng:37.90  },
+    { name:'Ghana',          code:'gh', lat:7.94,   lng:-1.02  },
+    { name:'Morocco',        code:'ma', lat:31.79,  lng:-7.09  },
+    { name:'Colombia',       code:'co', lat:4.57,   lng:-74.29 },
+    { name:'Chile',          code:'cl', lat:-35.67, lng:-71.54 },
+    { name:'Peru',           code:'pe', lat:-9.18,  lng:-75.01 },
+    { name:'Greece',         code:'gr', lat:39.07,  lng:21.82  },
+    { name:'Czech Republic', code:'cz', lat:49.81,  lng:15.47  },
+    { name:'Romania',        code:'ro', lat:45.94,  lng:24.96  },
+    { name:'Austria',        code:'at', lat:47.51,  lng:14.55  },
+    { name:'New Zealand',    code:'nz', lat:-40.90, lng:174.88 },
+    { name:'Ireland',        code:'ie', lat:53.41,  lng:-8.24  },
+    { name:'Norway',         code:'no', lat:60.47,  lng:8.46   },
+  ];
+
+  // ── Sentiment state per country ──
+  const sentimentMap = {}; // code -> 'positive'|'negative'|'neutral'
+
+  const SENT_COLOR = {
+    positive: 'rgba(34,197,94,0.85)',
+    negative: 'rgba(239,68,68,0.85)',
+    neutral:  'rgba(245,158,11,0.75)',
+    default:  'rgba(167,139,250,0.55)',
+  };
+  const LABEL_COLOR = {
+    positive: 'rgba(34,197,94,0.9)',
+    negative: 'rgba(239,68,68,0.9)',
+    neutral:  'rgba(245,158,11,0.9)',
+    default:  'rgba(180,172,202,0.65)',
+  };
+
+  function ptColor(d)  { return SENT_COLOR[sentimentMap[d.code]]  || SENT_COLOR.default;  }
+  function lblColor(d) { return LABEL_COLOR[sentimentMap[d.code]] || LABEL_COLOR.default; }
+  function ptAlt(d)    { return sentimentMap[d.code] ? 0.04 : 0.01; }
+  function ptRadius(d) { return sentimentMap[d.code] ? 0.55 : 0.35; }
+
+  // ── Globe setup ──
+  const globeEl = document.getElementById('globeEl');
+  const globe = Globe()(globeEl);
+
+  globe
+    .globeImageUrl('//unpkg.com/three-globe/example/img/earth-dark.jpg')
+    .backgroundImageUrl('//unpkg.com/three-globe/example/img/night-sky.png')
+    .atmosphereColor('#A78BFA')
+    .atmosphereAltitude(0.18)
+    .pointsData(COUNTRIES)
+    .pointLat('lat').pointLng('lng')
+    .pointColor(ptColor).pointAltitude(ptAlt).pointRadius(ptRadius)
+    .pointLabel(d => `<div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#EAE6F2;background:#1A1820;border:1px solid #3D3A4A;padding:4px 8px;border-radius:3px">${d.name}</div>`)
+    .onPointClick(d => fetchCountryNews(d))
+    .labelsData(COUNTRIES)
+    .labelLat('lat').labelLng('lng')
+    .labelText('name').labelSize(0.9)
+    .labelColor(lblColor).labelResolution(2)
+    .onLabelClick(d => fetchCountryNews(d));
+
+  // Set size
+  globe.width(globeEl.offsetWidth).height(globeEl.offsetHeight);
+  window.addEventListener('resize', () => globe.width(globeEl.offsetWidth).height(globeEl.offsetHeight));
+
+  // Auto-rotate
+  globe.controls().autoRotate = true;
+  globe.controls().autoRotateSpeed = 0.4;
+  globe.controls().enableDamping = true;
+
+  // Pause rotation on interaction, resume after 6s
+  let resumeTimer;
+  globeEl.addEventListener('mousedown', () => {
+    globe.controls().autoRotate = false;
+    clearTimeout(resumeTimer);
+  });
+  globeEl.addEventListener('mouseup', () => {
+    resumeTimer = setTimeout(() => { globe.controls().autoRotate = true; }, 6000);
+  });
+
+  // ── Refresh globe point/label colors ──
+  function refreshGlobe() {
+    globe.pointColor(ptColor).pointAltitude(ptAlt).pointRadius(ptRadius).labelColor(lblColor);
+  }
+
+  // ── Global news state ──
+  let currentCountry = null;
+  let globalFetching = false;
+  const seenTitles = new Set();
+  let lastFetchMs = 0;
+  const FETCH_COOLDOWN_MS = 60_000;   // min 60s between fetch attempts
+
+  // ── Auto-scroll state ──
+  const articlesEl = document.getElementById('globalArticles');
+  let scrollTimer = null;
+  let scrollPaused = false;
+  articlesEl.addEventListener('mouseenter', () => { scrollPaused = true; });
+  articlesEl.addEventListener('mouseleave', () => { scrollPaused = false; });
+
+  function showFetchIndicator() {
+    if (articlesEl.querySelector('.fetch-indicator')) return;
+    articlesEl.insertAdjacentHTML('beforeend', `
+      <div class="fetch-indicator">
+        <div class="skel-line w80"></div>
+        <div class="skel-line w50"></div>
+        <div class="skel-line w30"></div>
+      </div>`);
+    articlesEl.scrollTop = articlesEl.scrollHeight; // keep at bottom
+  }
+  function hideFetchIndicator() {
+    articlesEl.querySelector('.fetch-indicator')?.remove();
+  }
+
+  function startGlobalScroll() {
+    if (scrollTimer) return;
+    scrollTimer = setInterval(() => {
+      if (scrollPaused || currentCountry) return;
+      const atBottom = articlesEl.scrollTop + articlesEl.clientHeight >= articlesEl.scrollHeight - 6;
+      if (atBottom) {
+        const now = Date.now();
+        if (!globalFetching && now - lastFetchMs > FETCH_COOLDOWN_MS) {
+          lastFetchMs = now;
+          showFetchIndicator();
+          fetchGlobalNews();
+        }
+      } else {
+        articlesEl.scrollTop += 1;
+      }
+    }, 40); // ~25 px/s
+  }
+
+  function stopGlobalScroll() {
+    clearInterval(scrollTimer);
+    scrollTimer = null;
+  }
+
+  // ── Kick off on page load (after all state is declared) ──
+  document.getElementById('globalPanel').style.display = 'flex';
+  fetchGlobalNews();
+
+  async function fetchGlobalNews() {
+    if (globalFetching) return;
+    globalFetching = true;
+    const firstLoad = seenTitles.size === 0;
+    try {
+      const res = await fetch(`${API}/api/globe?country=world`);
+      const data = await res.json();
+      if (!res.ok || !data.tweets?.length) { globalFetching = false; return; }
+
+      const allArticles = data.tweets;
+      const newArticles = allArticles.filter(a => !seenTitles.has(a.text));
+      newArticles.forEach(a => seenTitles.add(a.text));
+
+      buildGlobalTicker(allArticles);
+
+      if (firstLoad) {
+        articlesEl.innerHTML = renderArticleHTML(newArticles);
+        articlesEl.scrollTop = 0;
+      } else if (newArticles.length > 0) {
+        articlesEl.insertAdjacentHTML('beforeend', renderArticleHTML(newArticles));
+      }
+
+      document.getElementById('globalMeta').textContent =
+        `${seenTitles.size} headlines · Google News · ${new Date().toLocaleTimeString()}`;
+
+      hideFetchIndicator();
+
+      // Reveal globe and start scroll on first load
+      if (firstLoad) {
+        document.getElementById('globeLoading').style.display = 'none';
+        startGlobalScroll();
+      }
+    } catch(_) {
+      hideFetchIndicator();
+      document.getElementById('globeLoading').style.display = 'none';
+    }
+    globalFetching = false;
+  }
+
+  function buildGlobalTicker(articles) {
+    const track = document.getElementById('ntickerTrack');
+    const icons = { positive:'▲', negative:'▼', neutral:'◌' };
+    const cls   = { positive:'pos', negative:'neg', neutral:'neu' };
+    const html = articles.map(a => {
+      const title = a.text.split(' ').slice(0, 10).join(' ') + (a.text.split(' ').length > 10 ? '…' : '');
+      return `<span class="ntick-item"><span class="ntick-sent ${cls[a.label]}">${icons[a.label]}</span><span class="ntick-title">${esc(title)}</span></span><span class="ntick-sep">·</span>`;
+    }).join('');
+    track.innerHTML = html + html;
+    // Restart animation from the beginning so ticker is visible immediately
+    const dur = `${Math.max(25, articles.length * 3.5)}s`;
+    track.style.animation = 'none';
+    requestAnimationFrame(() => {
+      track.style.animation = '';
+      track.style.animationDuration = dur;
+    });
+  }
+
+  // ── Reset to global view ──
+  function resetToGlobal() {
+    currentCountry = null;
+    document.getElementById('newsContent').style.display = 'none';
+    document.getElementById('newsLoading').style.display = 'none';
+    document.getElementById('globalPanel').style.display = 'flex';
+    globe.controls().autoRotate = true;
+    requestAnimationFrame(() => globe.width(globeEl.offsetWidth).height(globeEl.offsetHeight));
+    startGlobalScroll();
+  }
+
+  // ── Fetch news for a country ──
+  async function fetchCountryNews(country) {
+    if (currentCountry === country.code && document.getElementById('newsContent').style.display !== 'none') return;
+    currentCountry = country.code;
+
+    // Pause rotation + global scroll while viewing country news
+    globe.controls().autoRotate = false;
+    clearTimeout(resumeTimer);
+    stopGlobalScroll();
+
+    // Show loading
+    document.getElementById('globalPanel').style.display = 'none';
+    document.getElementById('newsContent').style.display = 'none';
+    document.getElementById('newsLoading').style.display = 'flex';
+    document.getElementById('newsLoadingT').textContent = `Fetching ${country.name} news…`;
+
+    try {
+      const res = await fetch(`${API}/api/globe?country=${encodeURIComponent(country.code)}`);
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || 'Failed to load news'); resetToGlobal(); return; }
+      renderNews(country, data);
+    } catch(_) {
+      showToast('Cannot reach backend');
+      resetToGlobal();
+    }
+  }
+
+  // ── Render country news panel ──
+  function renderNews(country, data) {
+    const articles = data.tweets || [];
+    const summary  = data.summary || {};
+    const sv = summary.overall_sentiment || 'neutral';
+
+    // Update sentiment map + globe colors
+    sentimentMap[country.code] = sv;
+    refreshGlobe();
+
+    // Country header (reset button already in HTML)
+    document.getElementById('countryName').textContent = country.name;
+    document.getElementById('countryMeta').textContent =
+      `${articles.length} headlines · Google News · ${data.cached ? 'cached' : 'live'}`;
+
+    // Verdict mini
+    const sc = (summary.avg_compound || 0) > 0 ? '+' : '';
+    document.getElementById('verdictMini').innerHTML = `
+      <div class="vm-word ${sv}">${sv.toUpperCase()}</div>
+      <div class="vm-stats">
+        <div class="vm-stat"><div class="vm-num pos">${summary.positive_pct || 0}%</div><div class="vm-lbl">Pos</div></div>
+        <div class="vm-stat"><div class="vm-num neg">${summary.negative_pct || 0}%</div><div class="vm-lbl">Neg</div></div>
+        <div class="vm-stat"><div class="vm-num neu">${summary.neutral_pct || 0}%</div><div class="vm-lbl">Neu</div></div>
+      </div>
+      <div class="vm-compound">${sc}${(summary.avg_compound || 0).toFixed(3)}</div>`;
+
+    // Country ticker
+    buildCountryTicker(articles);
+
+    // Article cards
+    document.getElementById('articleList').innerHTML = renderArticleHTML(articles);
+
+    // Show content
+    document.getElementById('newsLoading').style.display = 'none';
+    document.getElementById('newsContent').style.display = 'flex';
+
+    // Re-assert globe canvas size after layout shift
+    requestAnimationFrame(() => globe.width(globeEl.offsetWidth).height(globeEl.offsetHeight));
+
+    if (data.cached) showToast(`${country.name} · cached`, 'info');
+  }
+
+  // ── Country ticker ──
+  function buildCountryTicker(articles) {
+    const track = document.getElementById('countryTickerTrack');
+    if (!articles.length) { track.innerHTML = ''; return; }
+    const icons = { positive:'▲', negative:'▼', neutral:'◌' };
+    const cls   = { positive:'pos', negative:'neg', neutral:'neu' };
+    const html = articles.map(a => {
+      const title = a.text.split(' ').slice(0, 10).join(' ') + (a.text.split(' ').length > 10 ? '…' : '');
+      return `<span class="ntick-item"><span class="ntick-sent ${cls[a.label]}">${icons[a.label]}</span><span class="ntick-title">${esc(title)}</span></span><span class="ntick-sep">·</span>`;
+    }).join('');
+    track.innerHTML = html + html;
+    track.style.animationDuration = `${Math.max(25, articles.length * 3.5)}s`;
+    track.style.animation = 'none';
+    requestAnimationFrame(() => { track.style.animation = ''; track.style.animationDuration = `${Math.max(25, articles.length * 3.5)}s`; });
+  }
+
+  // ── Shared article card renderer ──
+  function renderArticleHTML(articles) {
+    if (!articles.length) return '<div style="text-align:center;padding:24px;color:var(--muted)">No articles found</div>';
+    return articles.map((a, i) => {
+      const sc = a.compound > 0 ? '+' : '';
+      const barPct = ((a.compound + 1) / 2 * 100).toFixed(1);
+      const barCol = a.compound >= 0.05 ? 'var(--pos)' : a.compound <= -0.05 ? 'var(--neg)' : 'var(--neu)';
+      const scoreClass = a.compound > 0 ? 'sc-pos' : a.compound < 0 ? 'sc-neg' : 'sc-neu';
+      return `<div class="art-card ${a.label}" style="animation-delay:${Math.min(i * 0.04, 0.6)}s">
+        <div class="art-body">
+          <div class="art-top">
+            <span class="tag tag-${a.label}">${a.label}</span>
+            ${a.source_name ? `<span class="art-src">${esc(a.source_name)}</span>` : ''}
+          </div>
+          <div class="art-title">${esc(a.text)}</div>
+          <div class="art-meta">
+            <a class="art-link" href="${a.url || '#'}" target="_blank" rel="noopener noreferrer">${fmtDate(a.created_at)} ↗</a>
+          </div>
+          <div class="score-bar"><div class="score-bar-fill" style="width:${barPct}%;background:${barCol};animation:barGrow .9s ease both;animation-delay:${Math.min(i*0.05,0.6)}s"></div></div>
+        </div>
+        <div class="art-score ${scoreClass}">${sc}${a.compound.toFixed(3)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Utils ──
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  function fmtDate(ts) {
+    try { const d = new Date(ts); return isNaN(d) ? (ts || '—') : d.toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+    catch(_) { return ts || '—'; }
+  }
+  function showToast(msg, type = 'error') {
+    const shelf = document.getElementById('toastShelf');
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.style.borderLeftColor = type === 'info' ? 'var(--acc)' : type === 'success' ? 'var(--pos)' : 'var(--neg)';
+    t.textContent = msg;
+    shelf.appendChild(t);
+    const dismiss = () => { t.classList.add('out'); t.addEventListener('animationend', () => t.remove(), {once:true}); };
+    const timer = setTimeout(dismiss, 4000);
+    t.addEventListener('click', () => { clearTimeout(timer); dismiss(); });
+  }
+
+  // ── Resizable panel ──
+  const resizeHandle = document.getElementById('resizeHandle');
+  const newsSideEl   = document.getElementById('newsPanel');
+  const globeLayout  = document.querySelector('.globe-layout');
+  let isResizing = false;
+
+  resizeHandle.addEventListener('mousedown', e => {
+    isResizing = true;
+    resizeHandle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!isResizing) return;
+    const rect = globeLayout.getBoundingClientRect();
+    const newWidth = Math.max(240, Math.min(640, rect.right - e.clientX));
+    newsSideEl.style.width = newWidth + 'px';
+    globe.width(globeEl.offsetWidth).height(globeEl.offsetHeight);
+  });
+  document.addEventListener('mouseup', () => {
+    if (!isResizing) return;
+    isResizing = false;
+    resizeHandle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    requestAnimationFrame(() => globe.width(globeEl.offsetWidth).height(globeEl.offsetHeight));
+  });
+</script>
+</body>
+</html>

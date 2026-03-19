@@ -1,0 +1,84 @@
+/* ── PulseCheck shared styles ─────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Design tokens ── */
+:root {
+  --bg:       #09080B;
+  --surf:     #100F14;
+  --surf2:    #1A1820;
+  --bord:     #2E2B38;
+  --bord2:    #3D3A4A;
+  --text:     #EAE6F2;
+  --text2:    #B4ACCA;
+  --muted:    #68627A;
+  --pos:      #22C55E;
+  --pos-bg:   rgba(34,197,94,0.10);
+  --pos-bord: rgba(34,197,94,0.30);
+  --neg:      #EF4444;
+  --neg-bg:   rgba(239,68,68,0.10);
+  --neg-bord: rgba(239,68,68,0.30);
+  --neu:      #F59E0B;
+  --neu-bg:   rgba(245,158,11,0.10);
+  --neu-bord: rgba(245,158,11,0.30);
+  --acc:      #A78BFA;
+  --acc2:     #7C3AED;
+}
+[data-theme="light"] {
+  --bg:       #F2EFF8;
+  --surf:     #FFFFFF;
+  --surf2:    #EAE5F5;
+  --bord:     #D4CDE8;
+  --bord2:    #C0B8D8;
+  --text:     #18142A;
+  --text2:    #3C3554;
+  --muted:    #7A7090;
+  --pos:      #16A34A;
+  --pos-bg:   rgba(22,163,74,0.08);
+  --pos-bord: rgba(22,163,74,0.35);
+  --neg:      #DC2626;
+  --neg-bg:   rgba(220,38,38,0.08);
+  --neg-bord: rgba(220,38,38,0.35);
+  --neu:      #D97706;
+  --neu-bg:   rgba(217,119,6,0.08);
+  --neu-bord: rgba(217,119,6,0.35);
+  --acc:      #7C3AED;
+  --acc2:     #A78BFA;
+}
+
+/* ── Base ── */
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 300;
+}
+
+/* ── Shared header atoms ── */
+.brand em { font-style: italic; color: var(--acc); }
+.hdr-right { display: flex; align-items: center; gap: 14px; }
+.theme-btn { background: none; border: 1px solid var(--bord); border-radius: 50%; width: 28px; height: 28px; cursor: pointer; color: var(--muted); font-size: 13px; display: flex; align-items: center; justify-content: center; transition: border-color .2s, color .2s; flex-shrink: 0; }
+.theme-btn:hover { border-color: var(--bord2); color: var(--text); }
+
+/* ── Tags ── */
+.tag { display: inline-flex; align-items: center; font-size: 8px; letter-spacing: 1px; text-transform: uppercase; padding: 2px 5px; border-radius: 1px; border: 1px solid; }
+.tag-positive { color: var(--pos); border-color: var(--pos-bord); background: var(--pos-bg); }
+.tag-negative { color: var(--neg); border-color: var(--neg-bord); background: var(--neg-bg); }
+.tag-neutral  { color: var(--neu); border-color: var(--neu-bord); background: var(--neu-bg); }
+
+/* ── Score bar ── */
+.score-bar { height: 2px; background: var(--bord); border-radius: 1px; margin-top: 6px; overflow: hidden; }
+.score-bar-fill { height: 100%; border-radius: 1px; }
+@keyframes barGrow { from { width: 0 !important; } }
+
+/* ── Toast shelf ── */
+#toastShelf { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: 6px; font-size: 11px; background: var(--surf2); border: 1px solid var(--bord2); border-left: 3px solid var(--acc); box-shadow: 0 8px 32px rgba(0,0,0,.45); max-width: 280px; pointer-events: auto; animation: toastIn .25s ease both; }
+.toast.out { animation: toastOut .2s ease forwards; }
+@keyframes toastIn  { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@keyframes toastOut { to   { opacity: 0; transform: translateX(12px); } }
+
+/* ── Spinner ring ── */
+.spin-ring { width: 28px; height: 28px; border: 2px solid var(--bord2); border-top-color: var(--acc); border-radius: 50%; animation: spin-ring .8s linear infinite; }
+@keyframes spin-ring { to { transform: rotate(360deg); } }
