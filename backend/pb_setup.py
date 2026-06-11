@@ -51,7 +51,9 @@ def add_field_if_missing(token, collection_name, field):
     col = r.json()
     existing_names = {f["name"] for f in col.get("fields", [])}
     if field["name"] in existing_names:
-        print(f"  ✓ Field '{field['name']}' already exists in '{collection_name}' — skipping")
+        print(
+            f"  ✓ Field '{field['name']}' already exists in '{collection_name}' — skipping"
+        )
         return
     col["fields"].append(field)
     r = httpx.patch(

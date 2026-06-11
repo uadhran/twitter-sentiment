@@ -175,11 +175,16 @@ def pb_save(summary: dict[str, Any], tweets: list[dict[str, Any]]) -> None:
             timeout=PB_WRITE_TIMEOUT_SECONDS,
         )
         if not r or r.status_code not in (200, 201):
-            logger.warning("[pocketbase] Failed to save analysis: %s", r.text if r else "no response")
+            logger.warning(
+                "[pocketbase] Failed to save analysis: %s",
+                r.text if r else "no response",
+            )
             return
 
         analysis_id = r.json().get("id")
-        logger.info("[pocketbase] Saved analysis %s for '%s'", analysis_id, summary["keyword"])
+        logger.info(
+            "[pocketbase] Saved analysis %s for '%s'", analysis_id, summary["keyword"]
+        )
 
         for i in range(0, len(tweets), PB_TWEET_BATCH_SIZE):
             batch = tweets[i : i + PB_TWEET_BATCH_SIZE]
@@ -375,7 +380,11 @@ async def _fetch_raw_twitterapi_io(keyword: str, count: int) -> list[dict]:
             if resp.status_code == 429:
                 if tweets:
                     # Got some tweets already — return them as-is, don't fall back
-                    logger.warning("[twitterapi.io] 429 on page %d — returning %d tweets collected so far", len(tweets) // 20 + 1, len(tweets))
+                    logger.warning(
+                        "[twitterapi.io] 429 on page %d — returning %d tweets collected so far",
+                        len(tweets) // 20 + 1,
+                        len(tweets),
+                    )
                     break
                 # 429 on the very first request — let caller fall back to Twikit
                 resp.raise_for_status()
@@ -384,7 +393,9 @@ async def _fetch_raw_twitterapi_io(keyword: str, count: int) -> list[dict]:
             data = resp.json()
             batch = data.get("tweets", [])
             tweets.extend(batch)
-            logger.info("[twitterapi.io] fetched %d tweets (total: %d)", len(batch), len(tweets))
+            logger.info(
+                "[twitterapi.io] fetched %d tweets (total: %d)", len(batch), len(tweets)
+            )
 
             if not data.get("has_next_page") or not batch:
                 break
@@ -428,14 +439,21 @@ async def _fetch_raw_twikit(keyword: str, count: int) -> list:
         try:
             if not hasattr(page, "next") or page.next is None:
                 break
-            next_page = await asyncio.wait_for(page.next(), timeout=FETCH_TIMEOUT_SECONDS)
+            next_page = await asyncio.wait_for(
+                page.next(), timeout=FETCH_TIMEOUT_SECONDS
+            )
             if not next_page:
                 break
             page = next_page
             page_num += 1
             batch = list(page)
             all_tweets.extend(batch)
-            logger.info("[twikit] page %d: %d tweets (total: %d)", page_num, len(batch), len(all_tweets))
+            logger.info(
+                "[twikit] page %d: %d tweets (total: %d)",
+                page_num,
+                len(batch),
+                len(all_tweets),
+            )
         except Exception as e:
             logger.warning("[twikit] pagination stopped at page %d: %s", page_num, e)
             break
@@ -490,7 +508,9 @@ def _normalize_gnews_article(raw: dict) -> dict:
         "created_at": raw.get("published date") or None,
         "likes": 0,
         "retweets": 0,
-        "source_name": publisher.get("title", "") if isinstance(publisher, dict) else str(publisher),
+        "source_name": publisher.get("title", "")
+        if isinstance(publisher, dict)
+        else str(publisher),
         "url": raw.get("url", ""),
     }
 
@@ -536,7 +556,9 @@ async def fetch_and_analyze(keyword: str, count: int, source: str = "twitter") -
             logger.info("[fetch] TwitterAPI.io: %d tweets", len(results))
             return _build_response(keyword, results, "twitterapi.io")
         except Exception as e:
-            logger.warning("[fetch] TwitterAPI.io failed: %s — falling back to Twikit", e)
+            logger.warning(
+                "[fetch] TwitterAPI.io failed: %s — falling back to Twikit", e
+            )
 
     raw = await _fetch_raw_twikit(keyword, count)
     logger.info("[fetch] Twikit: %d / %d tweets", len(raw), count)
@@ -589,12 +611,18 @@ def analyze():
         return jsonify({"error": keyword_error}), 400
 
     client_key = (
-        request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
-    ).split(",")[0].strip()
+        (request.headers.get("X-Forwarded-For", request.remote_addr or "unknown"))
+        .split(",")[0]
+        .strip()
+    )
     if is_rate_limited(client_key):
         return jsonify({"error": "Too many requests. Please retry shortly."}), 429
     if is_refresh_too_soon(client_key, keyword):
-        return jsonify({"error": f"Please wait {MIN_REFRESH_SECONDS}s before refreshing this keyword."}), 429
+        return jsonify(
+            {
+                "error": f"Please wait {MIN_REFRESH_SECONDS}s before refreshing this keyword."
+            }
+        ), 429
 
     try:
         cached = get_cached(keyword, count)
@@ -613,7 +641,9 @@ def analyze():
         return jsonify({"error": f"No {label} found for this keyword."}), 404
 
     set_cached(keyword, count, result)
-    Thread(target=pb_save, args=(result["summary"], result["tweets"]), daemon=False).start()
+    Thread(
+        target=pb_save, args=(result["summary"], result["tweets"]), daemon=False
+    ).start()
 
     return jsonify(result)
 
@@ -629,8 +659,10 @@ def globe_news():
     if country != "world" and not re.match(r"^[a-z]{2}$", country):
         return jsonify({"error": "Invalid country code"}), 400
     client_key = (
-        request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
-    ).split(",")[0].strip()
+        (request.headers.get("X-Forwarded-For", request.remote_addr or "unknown"))
+        .split(",")[0]
+        .strip()
+    )
     if is_rate_limited(client_key):
         return jsonify({"error": "Too many requests"}), 429
     now = time.time()
@@ -667,10 +699,13 @@ def history():
 @app.route("/api/history/<record_id>", methods=["DELETE"])
 def delete_history(record_id):
     """Delete a single analysis record (and its tweets via cascade)."""
-    if not re.match(r'^[a-zA-Z0-9]+$', record_id):
+    if not re.match(r"^[a-zA-Z0-9]+$", record_id):
         return jsonify({"error": "Invalid record id"}), 400
-    r = pb_request("DELETE", f"{PB_URL}/api/collections/analyses/records/{record_id}",
-                   timeout=PB_WRITE_TIMEOUT_SECONDS)
+    r = pb_request(
+        "DELETE",
+        f"{PB_URL}/api/collections/analyses/records/{record_id}",
+        timeout=PB_WRITE_TIMEOUT_SECONDS,
+    )
     if r is None:
         return jsonify({"error": "PocketBase not available"}), 503
     if r.status_code in (204, 404):
