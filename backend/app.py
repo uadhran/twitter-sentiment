@@ -471,7 +471,7 @@ def _first_present(*values: Any) -> Any:
 
 def _normalize_xquik_tweet(raw: dict) -> dict:
     """Map an Xquik tweet dict to our internal tweet format."""
-    text = str(_first_present(raw.get("text"), raw.get("full_text"), ""))
+    text = str(_first_present(raw.get("text"), raw.get("full_text")) or "")
     cleaned = clean_tweet(text)
     scores = analyzer.polarity_scores(cleaned)
     label = classify(scores["compound"])
@@ -481,7 +481,7 @@ def _normalize_xquik_tweet(raw: dict) -> dict:
         raw.get("created"),
     )
     return {
-        "id": str(_first_present(raw.get("id"), raw.get("tweet_id"), "")),
+        "id": str(_first_present(raw.get("id"), raw.get("tweet_id")) or ""),
         "text": text,
         "cleaned": cleaned,
         "compound": round(scores["compound"], 4),
@@ -650,7 +650,7 @@ async def fetch_and_analyze(keyword: str, count: int, source: str = "twitter") -
                 "[fetch] TwitterAPI.io failed: %s — falling back to Twikit", e
             )
 
-    if XQUIK_API_KEY:
+    if XQUIK_API_KEY and TWITTER_SOURCE != "xquik":
         try:
             raw = await _fetch_raw_xquik(keyword, count)
             results = [_normalize_xquik_tweet(t) for t in raw]

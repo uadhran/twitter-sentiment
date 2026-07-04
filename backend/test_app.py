@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import asyncio
 import sys
 import types
 import unittest
@@ -40,8 +41,20 @@ class DummyGNews:
 
 
 class DummyAsyncClient:
+    last_request = None
+
     def __init__(self, *_args, **_kwargs):
         pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def get(self, url, **kwargs):
+        self.__class__.last_request = (url, kwargs)
+        return DummyResponse()
 
 
 class DummyResponse:
@@ -156,6 +169,67 @@ class AppHelperTests(unittest.TestCase):
         self.assertEqual(normalized["likes"], 4)
         self.assertEqual(normalized["retweets"], 2)
         self.assertEqual(normalized["label"], "neutral")
+
+    def test_normalize_xquik_tweet_keeps_missing_fields_empty(self):
+        normalized = self.app_module._normalize_xquik_tweet({})
+
+        self.assertEqual(normalized["id"], "")
+        self.assertEqual(normalized["text"], "")
+        self.assertEqual(normalized["cleaned"], "")
+
+    def test_fetch_raw_xquik_uses_async_client_context_manager(self):
+        original_key = self.app_module.XQUIK_API_KEY
+        self.app_module.XQUIK_API_KEY = "test-key"
+        DummyAsyncClient.last_request = None
+
+        try:
+            raw = asyncio.run(self.app_module._fetch_raw_xquik("openai", 1))
+        finally:
+            self.app_module.XQUIK_API_KEY = original_key
+
+        self.assertEqual(raw, [])
+        self.assertEqual(
+            DummyAsyncClient.last_request,
+            (
+                "https://xquik.com/api/v1/x/tweets/search",
+                {
+                    "params": {"q": "openai", "limit": 1},
+                    "headers": {"x-api-key": "test-key"},
+                },
+            ),
+        )
+
+    def test_xquik_source_failure_does_not_retry_xquik_as_fallback(self):
+        original_key = self.app_module.XQUIK_API_KEY
+        original_source = self.app_module.TWITTER_SOURCE
+        original_twitterapi_key = self.app_module.TWITTERAPI_IO_KEY
+        calls = {"twikit": 0, "xquik": 0}
+
+        async def failing_xquik(_keyword, _count):
+            calls["xquik"] += 1
+            raise RuntimeError("network unavailable")
+
+        async def empty_twikit(_keyword, _count):
+            calls["twikit"] += 1
+            return []
+
+        self.app_module.XQUIK_API_KEY = "test-key"
+        self.app_module.TWITTER_SOURCE = "xquik"
+        self.app_module.TWITTERAPI_IO_KEY = ""
+
+        try:
+            with patch.object(self.app_module, "_fetch_raw_xquik", failing_xquik):
+                with patch.object(self.app_module, "_fetch_raw_twikit", empty_twikit):
+                    result = asyncio.run(
+                        self.app_module.fetch_and_analyze("openai", 1)
+                    )
+        finally:
+            self.app_module.XQUIK_API_KEY = original_key
+            self.app_module.TWITTER_SOURCE = original_source
+            self.app_module.TWITTERAPI_IO_KEY = original_twitterapi_key
+
+        self.assertEqual(calls, {"twikit": 1, "xquik": 1})
+        self.assertEqual(result["summary"]["source"], "twikit")
 
 
 if __name__ == "__main__":
