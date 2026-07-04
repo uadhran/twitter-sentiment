@@ -34,7 +34,7 @@ A rotating 3D globe (globe.gl) showing live Google News sentiment by country. Cl
 
 ### Analyzer (`/`)
 - **Dual source toggle** — switch between Twitter/X and Google News (English) per search
-- **Hybrid Twitter fetcher** — TwitterAPI.io primary, twikit scraping fallback (no official API key needed for fallback)
+- **Hybrid Twitter fetcher** - TwitterAPI.io primary, optional Xquik fallback, twikit scraping fallback
 - **VADER NLP** — compound score, positive/negative/neutral per item
 - **Animated verdict** — typewriter word, breathing compound meter, particle effects
 - **Chart/meter toggle** — switch between the needle gauge and a bar chart
@@ -61,7 +61,7 @@ A rotating 3D globe (globe.gl) showing live Google News sentiment by country. Cl
 
 ### Shared
 - **PocketBase persistence** — analyses tagged with `source` field (twitter / google-news)
-- **In-memory cache** — per-keyword result cache, configurable TTL
+- **In-memory cache** - source-aware per-keyword result cache, configurable TTL
 - **Rate limiting** — per-IP, per-keyword cooldown on the backend
 - **Single shared CSS** — `style.css` with design tokens used by both pages
 
@@ -73,6 +73,7 @@ A rotating 3D globe (globe.gl) showing live Google News sentiment by country. Cl
 |---|---|
 | Backend | [Flask](https://flask.palletsprojects.com/) 3.0 + httpx |
 | Twitter (primary) | [TwitterAPI.io](https://twitterapi.io) — paid, higher limits |
+| Twitter (optional) | [Xquik](https://xquik.com) - X search API via `x-api-key` |
 | Twitter (fallback) | [twikit](https://github.com/d60/twikit) — cookie-based scraping, free |
 | News source | [GNews](https://github.com/ranahaani/GNews) — Google News RSS, no key needed |
 | NLP | [VADER](https://github.com/cjhutto/vaderSentiment) — social-media-tuned sentiment |
@@ -118,6 +119,9 @@ Create `backend/.env`:
 ```env
 # Twitter — one or both
 TWITTERAPI_IO_KEY=your_key_here          # optional but preferred
+XQUIK_API_KEY=your_xquik_key_here        # optional fallback for X search
+TWITTER_SOURCE=xquik                     # optional: prefer Xquik first
+XQUIK_BASE=https://xquik.com             # optional override
 COOKIES_FILE=cookies.json                # for twikit fallback
 
 # PocketBase

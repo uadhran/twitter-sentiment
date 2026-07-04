@@ -47,8 +47,11 @@ CACHE_TTL_SECONDS = 30
 MAX_CACHE_ENTRIES = 200
 MIN_REFRESH_SECONDS = 45
 
-TWITTERAPI_IO_KEY = os.getenv("TWITTERAPI_IO_KEY", "")
+TWITTERAPI_IO_KEY = os.getenv("TWITTERAPI_IO_KEY", "").strip()
 TWITTERAPI_IO_BASE = "https://api.twitterapi.io"
+XQUIK_API_KEY = os.getenv("XQUIK_API_KEY", "").strip()
+XQUIK_BASE = (os.getenv("XQUIK_BASE") or "https://xquik.com").rstrip("/")
+TWITTER_SOURCE = os.getenv("TWITTER_SOURCE", "").strip().lower()
 
 
 _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
@@ -67,8 +70,8 @@ analyzer = SentimentIntensityAnalyzer()
 twitter_client = Client("en-US")
 _logged_in = False
 _request_times: dict[str, deque[float]] = defaultdict(deque)
-_analysis_cache: dict[tuple[str, int], tuple[float, dict]] = {}
-_last_query: dict[tuple[str, str], float] = {}
+_analysis_cache: dict[tuple[str, int, str], tuple[float, dict]] = {}
+_last_query: dict[tuple[str, str, str], float] = {}
 
 PB_URL = os.getenv("POCKETBASE_URL", "http://127.0.0.1:8090")
 PB_EMAIL = os.getenv("POCKETBASE_EMAIL", "")
@@ -327,10 +330,10 @@ def is_rate_limited(client_key: str) -> bool:
     return False
 
 
-def is_refresh_too_soon(client_key: str, keyword: str) -> bool:
+def is_refresh_too_soon(client_key: str, keyword: str, source: str) -> bool:
     """Throttle repeat requests for the same keyword per client."""
     now = time.time()
-    key = (client_key, keyword.lower())
+    key = (client_key, keyword.lower(), source)
     last = _last_query.get(key)
     if last and now - last < MIN_REFRESH_SECONDS:
         return True
@@ -338,8 +341,8 @@ def is_refresh_too_soon(client_key: str, keyword: str) -> bool:
     return False
 
 
-def get_cached(keyword: str, count: int) -> dict | None:
-    key = (keyword.lower(), count)
+def get_cached(keyword: str, count: int, source: str) -> dict | None:
+    key = (keyword.lower(), count, source)
     cached = _analysis_cache.get(key)
     if not cached:
         return None
@@ -350,11 +353,11 @@ def get_cached(keyword: str, count: int) -> dict | None:
     return payload
 
 
-def set_cached(keyword: str, count: int, payload: dict) -> None:
+def set_cached(keyword: str, count: int, source: str, payload: dict) -> None:
     if len(_analysis_cache) >= MAX_CACHE_ENTRIES:
         oldest_key = min(_analysis_cache.items(), key=lambda kv: kv[1][0])[0]
         _analysis_cache.pop(oldest_key, None)
-    _analysis_cache[(keyword.lower(), count)] = (time.time(), payload)
+    _analysis_cache[(keyword.lower(), count, source)] = (time.time(), payload)
 
 
 async def _fetch_raw_twitterapi_io(keyword: str, count: int) -> list[dict]:
@@ -422,6 +425,84 @@ def _normalize_twitterapi_io_tweet(raw: dict) -> dict:
         "created_at": raw.get("createdAt") or None,
         "likes": raw.get("likeCount", 0) or 0,
         "retweets": raw.get("retweetCount", 0) or 0,
+    }
+
+
+async def _fetch_raw_xquik(keyword: str, count: int) -> list[dict]:
+    """Fetch tweets from Xquik's X search endpoint."""
+    if not XQUIK_API_KEY:
+        raise ValueError("XQUIK_API_KEY not configured")
+
+    async with httpx.AsyncClient(timeout=FETCH_TIMEOUT_SECONDS) as client:
+        resp = await client.get(
+            f"{XQUIK_BASE}/api/v1/x/tweets/search",
+            params={"q": keyword, "limit": count},
+            headers={"x-api-key": XQUIK_API_KEY},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    if not isinstance(data, dict):
+        return []
+    return _extract_xquik_tweets(data)[:count]
+
+
+def _extract_xquik_tweets(data: dict) -> list[dict]:
+    """Return tweet records from supported Xquik response envelopes."""
+    candidates: list[Any] = [data.get("tweets"), data.get("items")]
+    nested = data.get("data")
+    if isinstance(nested, dict):
+        candidates.extend([nested.get("tweets"), nested.get("items")])
+    else:
+        candidates.append(nested)
+
+    for candidate in candidates:
+        if isinstance(candidate, list):
+            return [item for item in candidate if isinstance(item, dict)]
+    return []
+
+
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _normalize_xquik_tweet(raw: dict) -> dict:
+    """Map an Xquik tweet dict to our internal tweet format."""
+    text = str(_first_present(raw.get("text"), raw.get("full_text"), ""))
+    cleaned = clean_tweet(text)
+    scores = analyzer.polarity_scores(cleaned)
+    label = classify(scores["compound"])
+    created_at = _first_present(
+        raw.get("created_at"),
+        raw.get("createdAt"),
+        raw.get("created"),
+    )
+    return {
+        "id": str(_first_present(raw.get("id"), raw.get("tweet_id"), "")),
+        "text": text,
+        "cleaned": cleaned,
+        "compound": round(scores["compound"], 4),
+        "positive": round(scores["pos"], 4),
+        "negative": round(scores["neg"], 4),
+        "neutral": round(scores["neu"], 4),
+        "label": label,
+        "created_at": created_at,
+        "likes": _first_present(
+            raw.get("like_count"),
+            raw.get("likeCount"),
+            raw.get("likes"),
+            raw.get("favorite_count"),
+            0,
+        ),
+        "retweets": _first_present(
+            raw.get("retweet_count"),
+            raw.get("retweetCount"),
+            raw.get("retweets"),
+            0,
+        ),
     }
 
 
@@ -541,14 +622,23 @@ def _build_response(keyword: str, results: list[dict], source: str) -> dict:
 
 
 async def fetch_and_analyze(keyword: str, count: int, source: str = "twitter") -> dict:
-    """Fetch and analyze content. source='twitter' uses TwitterAPI.io/Twikit; source='news' uses Google News RSS."""
+    """Fetch and analyze content. source='twitter' uses configured X sources; source='news' uses Google News RSS."""
     if source == "news":
         raw = await _fetch_raw_gnews(keyword, count)
         results = [_normalize_gnews_article(a) for a in raw]
         logger.info("[fetch] GNews: %d articles", len(results))
         return _build_response(keyword, results, "google-news")
 
-    # Twitter path: TwitterAPI.io with Twikit fallback
+    if TWITTER_SOURCE == "xquik":
+        try:
+            raw = await _fetch_raw_xquik(keyword, count)
+            results = [_normalize_xquik_tweet(t) for t in raw]
+            logger.info("[fetch] Xquik: %d tweets", len(results))
+            return _build_response(keyword, results, "xquik")
+        except Exception as e:
+            logger.warning("[fetch] Xquik failed: %s; falling back", e)
+
+    # Twitter path: TwitterAPI.io, optional Xquik, then Twikit fallback
     if TWITTERAPI_IO_KEY:
         try:
             raw = await _fetch_raw_twitterapi_io(keyword, count)
@@ -559,6 +649,15 @@ async def fetch_and_analyze(keyword: str, count: int, source: str = "twitter") -
             logger.warning(
                 "[fetch] TwitterAPI.io failed: %s — falling back to Twikit", e
             )
+
+    if XQUIK_API_KEY:
+        try:
+            raw = await _fetch_raw_xquik(keyword, count)
+            results = [_normalize_xquik_tweet(t) for t in raw]
+            logger.info("[fetch] Xquik: %d tweets", len(results))
+            return _build_response(keyword, results, "xquik")
+        except Exception as e:
+            logger.warning("[fetch] Xquik failed: %s; falling back to Twikit", e)
 
     raw = await _fetch_raw_twikit(keyword, count)
     logger.info("[fetch] Twikit: %d / %d tweets", len(raw), count)
@@ -617,7 +716,7 @@ def analyze():
     )
     if is_rate_limited(client_key):
         return jsonify({"error": "Too many requests. Please retry shortly."}), 429
-    if is_refresh_too_soon(client_key, keyword):
+    if is_refresh_too_soon(client_key, keyword, source):
         return jsonify(
             {
                 "error": f"Please wait {MIN_REFRESH_SECONDS}s before refreshing this keyword."
@@ -625,7 +724,7 @@ def analyze():
         ), 429
 
     try:
-        cached = get_cached(keyword, count)
+        cached = get_cached(keyword, count, source)
         if cached:
             return jsonify({**cached, "cached": True})
         result = asyncio.run(fetch_and_analyze(keyword, count, source))
@@ -640,7 +739,7 @@ def analyze():
         label = "articles" if source == "news" else "tweets"
         return jsonify({"error": f"No {label} found for this keyword."}), 404
 
-    set_cached(keyword, count, result)
+    set_cached(keyword, count, source, result)
     Thread(
         target=pb_save, args=(result["summary"], result["tweets"]), daemon=False
     ).start()
